@@ -3,3 +3,4 @@ uvicorn
 python-dotenv
 pandas
 yfinance
+git+[https://github.com/kotaksecurities/neo-api-client-python.git](https://github.com/kotaksecurities/neo-api-client-python.git)
