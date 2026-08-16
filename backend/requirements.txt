@@ -1,7 +1,7 @@
 fastapi
-uvicorn
+uvicorn==0.29.0
+websockets==12.0
 python-dotenv
 pandas
 yfinance
-websockets
 git+https://github.com/Kotak-Neo/Kotak-neo-api-v2.git@v2.0.2#egg=neo_api_client
