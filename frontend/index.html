@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockScore Live</title>
+    <style>
+        :root {
+            --bg-color: #f4f6f9;
+            --card-bg: #ffffff;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --text-dark: #1e293b;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --green: #16a34a;
+            --yellow: #d97706;
+            --red: #dc2626;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-dark);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .header-card, .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--border);
+        }
+
+        .header-title {
+            font-size: 24px;
+            font-weight: 700;
+            margin: 0 0 6px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin: 0 0 16px 0;
+        }
+
+        .form-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        input[type="text"], input[type="password"] {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 15px;
+            outline: none;
+        }
+
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: var(--primary-hover);
+        }
+
+        .status-msg {
+            margin-top: 10px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .status-msg.success { color: var(--green); }
+        .status-msg.error { color: var(--red); }
+
+        .hidden { display: none !important; }
+
+        /* Stock Score Grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 16px;
+        }
+
+        .metric-box {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+        }
+
+        .metric-label {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .metric-value {
+            font-size: 22px;
+            font-weight: 700;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        .badge.STRONG_BUY, .badge.BUY { background: #dcfce7; color: #15803d; }
+        .badge.HOLD { background: #fef3c7; color: #b45309; }
+        .badge.AVOID { background: #fee2e2; color: #b91c1c; }
+
+        .breakdown-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .breakdown-card {
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+        }
+
+        .breakdown-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--text-muted);
+        }
+
+        .breakdown-score {
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        /* Reasons & Warnings */
+        .reasons-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .reason-box {
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .reason-box.positive { background: #f0fdf4; border: 1px solid #bbf7d0; }
+        .reason-box.warning { background: #fff1f2; border: 1px solid #fecdd3; }
+
+        .reason-box h4 {
+            margin: 0 0 10px 0;
+            font-size: 15px;
+        }
+
+        .reason-box ul {
+            margin: 0;
+            padding-left: 20px;
+            font-size: 13px;
+        }
+
+        .reason-box li { margin-bottom: 6px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <!-- Header -->
+    <div class="header-card">
+        <h1 class="header-title">📊 StockScore Live</h1>
+        <p class="subtitle">Kotak Neo live price + 100-Point Fundamental, Technical, Valuation & Risk Engine</p>
+
+        <!-- Login Form -->
+        <div id="login-section">
+            <h3 style="margin: 0 0 8px 0; font-size: 16px;">🔐 Kotak Neo Login</h3>
+            <div class="form-group">
+                <input type="password" id="totp-input" placeholder="Enter 6-digit TOTP" maxlength="6">
+                <button onclick="handleLogin()">Login to Kotak</button>
+            </div>
+            <div id="login-msg" class="status-msg"></div>
+        </div>
+    </div>
+
+    <!-- Stock Search Form -->
+    <div class="card">
+        <h3 style="margin: 0 0 8px 0; font-size: 16px;">🔍 Analyze Stock</h3>
+        <div class="form-group">
+            <input type="text" id="symbol-input" placeholder="e.g. TCS, RELIANCE, GPPL">
+            <button onclick="analyzeStock()">Analyze Stock</button>
+        </div>
+        <div id="search-msg" class="status-msg"></div>
+    </div>
+
+    <!-- Results Section -->
+    <div id="results-section" class="card hidden">
+
+        <!-- Top Overview -->
+        <div class="metrics-grid">
+            <div class="metric-box">
+                <div class="metric-label">Company</div>
+                <div class="metric-value" id="res-company">-</div>
+                <div style="font-size: 12px; color: var(--text-muted);" id="res-symbol">-</div>
+            </div>
+
+            <div class="metric-box">
+                <div class="metric-label">Live LTP</div>
+                <div class="metric-value" id="res-ltp">₹0.00</div>
+            </div>
+
+            <div class="metric-box">
+                <div class="metric-label">StockScore</div>
+                <div class="metric-value" id="res-score">0/100</div>
+                <div style="font-size: 12px; color: var(--text-muted);" id="res-confidence">Confidence: 0%</div>
+            </div>
+
+            <div class="metric-box">
+                <div class="metric-label">Decision</div>
+                <div style="margin-top: 4px;">
+                    <span id="res-decision" class="badge">HOLD</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4-Category Score Breakdown -->
+        <h3 style="margin-top: 24px; margin-bottom: 8px; font-size: 16px;">Score Breakdown</h3>
+        <div class="breakdown-grid">
+            <div class="breakdown-card">
+                <div class="breakdown-title">Fundamental</div>
+                <div class="breakdown-score" id="score-fund">0 / 40</div>
+            </div>
+            <div class="breakdown-card">
+                <div class="breakdown-title">Technical</div>
+                <div class="breakdown-score" id="score-tech">0 / 25</div>
+            </div>
+            <div class="breakdown-card">
+                <div class="breakdown-title">Valuation</div>
+                <div class="breakdown-score" id="score-val">0 / 20</div>
+            </div>
+            <div class="breakdown-card">
+                <div class="breakdown-title">Risk Profile</div>
+                <div class="breakdown-score" id="score-risk">0 / 15</div>
+            </div>
+        </div>
+
+        <!-- Fair Value Analysis -->
+        <div class="metric-box" style="margin-top: 16px;" id="fair-value-box">
+            <div class="metric-label">Fair Value Analysis</div>
+            <div style="font-size: 14px; margin-top: 4px;" id="res-fairvalue">Fair Value: N/A</div>
+            <div style="font-size: 12px; color: var(--text-muted);" id="res-buyzone">Suggested Buy Zone: N/A</div>
+        </div>
+
+        <!-- Positives & Warnings -->
+        <div class="reasons-container">
+            <div class="reason-box positive">
+                <h4 style="color: var(--green);">🟢 Key Positives (Why Buy)</h4>
+                <ul id="list-positives"></ul>
+            </div>
+            <div class="reason-box warning">
+                <h4 style="color: var(--red);">🔴 Risk Warnings & Negatives</h4>
+                <ul id="list-warnings"></ul>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+    async function handleLogin() {
+        const totp = document.getElementById('totp-input').value.trim();
+        const msg = document.getElementById('login-msg');
+        msg.className = 'status-msg';
+        msg.innerText = 'Logging in...';
+
+        try {
+            const res = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ totp })
+            });
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.detail || 'Login failed');
+
+            msg.className = 'status-msg success';
+            msg.innerText = '✔ Kotak Neo login successful';
+        } catch (err) {
+            msg.className = 'status-msg error';
+            msg.innerText = '❌ ' + err.message;
+        }
+    }
+
+    async function analyzeStock() {
+        const company = document.getElementById('symbol-input').value.trim();
+        const msg = document.getElementById('search-msg');
+        const results = document.getElementById('results-section');
+
+        msg.className = 'status-msg';
+        msg.innerText = 'Analyzing stock engine...';
+        results.classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/score', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ company })
+            });
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.detail || 'Analysis failed');
+
+            msg.className = 'status-msg success';
+            msg.innerText = '✔ Analysis complete';
+
+            // Populate Overview
+            document.getElementById('res-company').innerText = data.company || data.symbol;
+            document.getElementById('res-symbol').innerText = data.symbol;
+            document.getElementById('res-ltp').innerText = `₹${data.ltp.toFixed(2)}`;
+            document.getElementById('res-score').innerText = `${data.score}/100`;
+            document.getElementById('res-confidence').innerText = `Confidence: ${data.data_confidence_pct}%`;
+
+            const decElem = document.getElementById('res-decision');
+            decElem.innerText = data.decision;
+            decElem.className = `badge ${data.decision.replace(' ', '_')}`;
+
+            // Populate 4-Category Breakdown safely
+            const bd = data.breakdown || {};
+            document.getElementById('score-fund').innerText = `${bd.fundamental?.score || 0} / 40`;
+            document.getElementById('score-tech').innerText = `${bd.technical?.score || 0} / 25`;
+            document.getElementById('score-val').innerText = `${bd.valuation?.score || 0} / 20`;
+            document.getElementById('score-risk').innerText = `${bd.risk?.score || 0} / 15`;
+
+            // Fair Value
+            const fv = data.fair_value_analysis || {};
+            if (fv.fair_value) {
+                document.getElementById('res-fairvalue').innerText = `Fair Value: ₹${fv.fair_value} (${fv.valuation_status}, Safety: ${fv.margin_of_safety_pct}%)`;
+                document.getElementById('res-buyzone').innerText = `Suggested Buy Zone: ${fv.buy_zone}`;
+            } else {
+                document.getElementById('res-fairvalue').innerText = `Fair Value: N/A (${fv.valuation_status || 'Data insufficient'})`;
+                document.getElementById('res-buyzone').innerText = `Suggested Buy Zone: N/A`;
+            }
+
+            // Lists
+            const posList = document.getElementById('list-positives');
+            posList.innerHTML = (data.why_buy || []).map(p => `<li>${p}</li>`).join('') || '<li>No major signals triggered</li>';
+
+            const warnList = document.getElementById('list-warnings');
+            warnList.innerHTML = (data.risk_warnings || []).map(w => `<li>${w}</li>`).join('') || '<li>No immediate risk warnings</li>';
+
+            results.classList.remove('hidden');
+
+        } catch (err) {
+            msg.className = 'status-msg error';
+            msg.innerText = '❌ ' + err.message;
+        }
+    }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,14 @@
+STOCKSCORE REAL APP
+1. Copy your existing backend .env into this new backend folder.
+2. Open CMD:
+cd /d C:\StockScore\stockscore_real_app\backend
+3. Activate Python 3.12 environment:
+python3.12 -m venv .venv
+.venv\Scripts\activate
+4. Install:
+python -m pip install -r requirements.txt
+5. Start:
+python -m uvicorn app:app --host 127.0.0.1 --port 8000
+6. Open http://127.0.0.1:8000
+7. Enter TOTP, login, then enter MEESHO/TCS/RELIANCE.
+Never upload .env to GitHub.
