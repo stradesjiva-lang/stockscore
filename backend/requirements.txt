@@ -3,4 +3,3 @@ uvicorn[standard]
 python-dotenv
 pandas
 yfinance
-neo-api-client
