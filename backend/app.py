@@ -2,16 +2,13 @@ import os
 import math
 from pathlib import Path
 import json
-
 import requests
-import pandas as pd
-import numpy as np
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from neo_api_client import NeoAPI
-
 
 # =========================================================
 # CONFIG & SESSION SETUP
@@ -21,375 +18,8 @@ load_dotenv()
 
 app = FastAPI(title="StockScore Live - 100pt Model")
 
-# Twelve Data configuration
-# Add TWELVE_DATA_API_KEY in Render Environment Variables.
-TD_BASE_URL = "https://api.twelvedata.com"
-td_session = requests.Session()
-td_session.headers.update({
-    "User-Agent": "StockScore/1.0",
-    "Accept": "application/json",
-})
-TD_CACHE = {}
-TD_CACHE_TTL = 300  # seconds
-
-
-def td_request(endpoint, params=None, ttl=300):
-    """Request Twelve Data with short-lived server-side caching."""
-    api_key = os.getenv("TWELVE_DATA_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "TWELVE_DATA_API_KEY is missing. Add it in Render Environment Variables."
-        )
-
-    params = dict(params or {})
-    params["apikey"] = api_key
-    cache_key = (endpoint, tuple(sorted((str(k), str(v)) for k, v in params.items() if k != "apikey")))
-    now = __import__("time").time()
-
-    cached = TD_CACHE.get(cache_key)
-    if cached and now - cached["time"] < ttl:
-        return cached["data"]
-
-    try:
-        r = td_session.get(
-            f"{TD_BASE_URL}/{endpoint.lstrip('/')}",
-            params=params,
-            timeout=20,
-        )
-        if r.status_code == 429:
-            raise RuntimeError("Twelve Data rate limit reached. Please try again shortly.")
-        r.raise_for_status()
-        data = r.json()
-    except requests.RequestException as e:
-        raise RuntimeError(f"Twelve Data request failed: {e}")
-
-    if isinstance(data, dict) and str(data.get("status", "")).lower() == "error":
-        raise RuntimeError(data.get("message") or data.get("code") or "Twelve Data returned an error.")
-
-    TD_CACHE[cache_key] = {"time": now, "data": data}
-    return data
-
-
-def td_num(value):
-    """Convert Twelve Data numeric values safely."""
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return num(value)
-    try:
-        s = str(value).replace(",", "").replace("%", "").strip()
-        if not s or s.lower() in {"none", "null", "nan", "n/a", "na"}:
-            return None
-        return num(float(s))
-    except Exception:
-        return None
-
-
-def deep_find(obj, keys):
-    """Find the first numeric value matching one of the supplied keys."""
-    wanted = {str(k).lower() for k in keys}
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if str(k).lower() in wanted:
-                n = td_num(v)
-                if n is not None:
-                    return n
-        for v in obj.values():
-            found = deep_find(v, keys)
-            if found is not None:
-                return found
-    elif isinstance(obj, list):
-        for v in obj:
-            found = deep_find(v, keys)
-            if found is not None:
-                return found
-    return None
-
-
-def td_percent_ratio(value):
-    """Normalize a percentage-like API value to decimal form."""
-    n = td_num(value)
-    if n is None:
-        return None
-    # APIs may return either 0.25 or 25 for 25%.
-    return n / 100.0 if abs(n) > 2 else n
-
-
-class TDMarketData:
-    """Small compatibility wrapper so the existing scoring functions can use DataFrames."""
-    def __init__(self, financials=None, quarterly_financials=None,
-                 balance_sheet=None, cashflow=None):
-        self.financials = financials if financials is not None else pd.DataFrame()
-        self.quarterly_financials = (
-            quarterly_financials if quarterly_financials is not None else pd.DataFrame()
-        )
-        self.balance_sheet = balance_sheet if balance_sheet is not None else pd.DataFrame()
-        self.cashflow = cashflow if cashflow is not None else pd.DataFrame()
-
-
-def _latest_statement_value(rows, candidates):
-    """Get a value from the latest statement record using several possible field names."""
-    if not isinstance(rows, list):
-        return None
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        for key in candidates:
-            if key in row:
-                value = td_num(row.get(key))
-                if value is not None:
-                    return value
-    return None
-
-
-def _make_df(row_map, records):
-    """Create a simple yfinance-compatible statement DataFrame."""
-    if not isinstance(records, list) or not records:
-        return pd.DataFrame()
-    values = {}
-    for label, candidates in row_map.items():
-        vals = []
-        for rec in records:
-            val = None
-            for key in candidates:
-                if key in rec:
-                    val = td_num(rec.get(key))
-                    if val is not None:
-                        break
-            vals.append(val)
-        if any(v is not None for v in vals):
-            values[label] = vals
-    if not values:
-        return pd.DataFrame()
-    return pd.DataFrame(values, index=range(len(records))).T
-
-
-def load_twelve_data(symbol):
-    """Load daily history and fundamental data from Twelve Data for an NSE stock."""
-    common = {"symbol": symbol, "exchange": "NSE"}
-
-    # Daily OHLCV: 260 trading sessions is enough for the current technical model.
-    ts = td_request(
-        "time_series",
-        {**common, "interval": "1day", "outputsize": 260, "order": "asc"},
-        ttl=180,
-    )
-    values = ts.get("values", []) if isinstance(ts, dict) else []
-    rows = []
-    for item in values:
-        if not isinstance(item, dict):
-            continue
-        rows.append({
-            "datetime": item.get("datetime"),
-            "Open": td_num(item.get("open")),
-            "High": td_num(item.get("high")),
-            "Low": td_num(item.get("low")),
-            "Close": td_num(item.get("close")),
-            "Volume": td_num(item.get("volume")),
-        })
-
-    hist = pd.DataFrame(rows)
-    if not hist.empty:
-        hist["datetime"] = pd.to_datetime(hist["datetime"], errors="coerce")
-        hist = hist.dropna(subset=["datetime"]).sort_values("datetime").set_index("datetime")
-        for col in ["Open", "High", "Low", "Close", "Volume"]:
-            hist[col] = pd.to_numeric(hist[col], errors="coerce")
-
-    # Statistics contains many valuation/profitability fields, when enabled for the API key.
-    try:
-        stats = td_request("statistics", common, ttl=1800)
-    except Exception as e:
-        print("TWELVE DATA STATISTICS WARNING:", repr(e))
-        stats = {}
-
-    # Statements are fetched only once and cached by td_request().
-    try:
-        income_q = td_request(
-            "income_statement",
-            {**common, "period": "quarterly", "outputsize": 5},
-            ttl=3600,
-        )
-    except Exception as e:
-        print("TWELVE DATA QUARTERLY INCOME WARNING:", repr(e))
-        income_q = {}
-
-    try:
-        income_a = td_request(
-            "income_statement",
-            {**common, "period": "annual", "outputsize": 2},
-            ttl=3600,
-        )
-    except Exception as e:
-        print("TWELVE DATA ANNUAL INCOME WARNING:", repr(e))
-        income_a = {}
-
-    try:
-        balance = td_request(
-            "balance_sheet",
-            {**common, "period": "annual", "outputsize": 1},
-            ttl=3600,
-        )
-    except Exception as e:
-        print("TWELVE DATA BALANCE SHEET WARNING:", repr(e))
-        balance = {}
-
-    # Cash flow is relatively expensive on Twelve Data, so request it only when needed.
-    cashflow = {}
-    try:
-        cashflow = td_request(
-            "cash_flow",
-            {**common, "period": "annual", "outputsize": 1},
-            ttl=3600,
-        )
-    except Exception as e:
-        print("TWELVE DATA CASH FLOW WARNING:", repr(e))
-
-    q_records = income_q.get("income_statement", []) if isinstance(income_q, dict) else []
-    a_records = income_a.get("income_statement", []) if isinstance(income_a, dict) else []
-    b_records = balance.get("balance_sheet", []) if isinstance(balance, dict) else []
-    cf_records = cashflow.get("cash_flow", []) if isinstance(cashflow, dict) else []
-
-    financials = _make_df({
-        "Net Income": ["net_income"],
-        "Net Income Common Stockholders": ["net_income"],
-        "Total Revenue": ["sales", "revenue"],
-        "EPS": ["eps_diluted", "eps_basic"],
-    }, a_records)
-
-    quarterly_financials = _make_df({
-        "Net Income": ["net_income"],
-        "Net Income Common Stockholders": ["net_income"],
-        "Total Revenue": ["sales", "revenue"],
-        "EPS": ["eps_diluted", "eps_basic"],
-    }, q_records)
-
-    # Build balance-sheet rows in the format expected by the existing fallback engine.
-    balance_rows = {}
-    if b_records:
-        b = b_records[0]
-        assets = b.get("assets", {}) if isinstance(b.get("assets"), dict) else {}
-        liabilities = b.get("liabilities", {}) if isinstance(b.get("liabilities"), dict) else {}
-        equity = b.get("equity", {}) if isinstance(b.get("equity"), dict) else {}
-
-        current_assets = (
-            td_num(assets.get("current_assets", {}).get("total_current_assets"))
-            if isinstance(assets.get("current_assets"), dict) else None
-        )
-        current_liab = (
-            td_num(liabilities.get("current_liabilities", {}).get("total_current_liabilities"))
-            if isinstance(liabilities.get("current_liabilities"), dict) else None
-        )
-        stock_equity = td_num(equity.get("total_shareholders_equity"))
-        if stock_equity is None:
-            stock_equity = td_num(equity.get("shareholders_equity"))
-
-        if current_assets is not None:
-            balance_rows["Current Assets"] = [current_assets]
-        if current_liab is not None:
-            balance_rows["Current Liabilities"] = [current_liab]
-        if stock_equity is not None:
-            balance_rows["Stockholders Equity"] = [stock_equity]
-
-    balance_df = pd.DataFrame(balance_rows).T if balance_rows else pd.DataFrame()
-
-    # Build cash-flow rows for the existing FCF/earnings-quality logic.
-    cash_rows = {}
-    if cf_records:
-        cf = cf_records[0]
-        op = cf.get("operating_activities", {}) if isinstance(cf.get("operating_activities"), dict) else {}
-        inv = cf.get("investing_activities", {}) if isinstance(cf.get("investing_activities"), dict) else {}
-        ocf = td_num(op.get("net_cash_from_operating_activities"))
-        if ocf is None:
-            ocf = td_num(op.get("operating_cash_flow"))
-        capex = td_num(inv.get("capital_expenditures"))
-        if capex is None:
-            capex = td_num(inv.get("capital_expenditure"))
-        if ocf is not None:
-            cash_rows["Operating Cash Flow"] = [ocf]
-        if capex is not None:
-            # Keep the conventional negative-capex sign expected by the original code.
-            cash_rows["Capital Expenditure"] = [-abs(capex)]
-
-    cash_df = pd.DataFrame(cash_rows).T if cash_rows else pd.DataFrame()
-
-    # Normalize the statistics object into the info keys used by the original scoring engine.
-    info = {
-        "trailingPE": deep_find(stats, ["trailing_pe", "trailing_pe_ratio", "pe_ratio", "pe"]),
-        "forwardPE": deep_find(stats, ["forward_pe", "forward_pe_ratio"]),
-        "trailingPegRatio": deep_find(stats, ["peg_ratio", "trailing_peg_ratio"]),
-        "priceToBook": deep_find(stats, ["price_to_book", "price_to_book_ratio", "pb_ratio"]),
-        "returnOnEquity": td_percent_ratio(
-            deep_find(stats, ["return_on_equity", "roe", "roe_ratio"])
-        ),
-        "revenueGrowth": td_percent_ratio(
-            deep_find(stats, ["revenue_growth", "revenue_growth_yoy", "growth_rate"])
-        ),
-        "earningsGrowth": td_percent_ratio(
-            deep_find(stats, ["earnings_growth", "earnings_growth_yoy", "eps_growth"])
-        ),
-        "debtToEquity": deep_find(stats, ["debt_to_equity", "debt_equity_ratio"]),
-        "marketCap": deep_find(stats, ["market_capitalization", "market_cap"]),
-        "trailingEps": deep_find(stats, ["eps", "diluted_eps", "trailing_eps"]),
-        "forwardEps": deep_find(stats, ["forward_eps"]),
-        "beta": deep_find(stats, ["beta"]),
-        "freeCashflow": deep_find(stats, ["free_cash_flow", "free_cashflow"]),
-        "operatingCashflow": deep_find(stats, ["operating_cash_flow", "operating_cashflow"]),
-        "netIncomeToCommon": deep_find(stats, ["net_income", "net_income_to_common"]),
-        "currentRatio": deep_find(stats, ["current_ratio"]),
-    }
-
-    # Derive missing metrics from statements where possible.
-    if info["earningsGrowth"] is None and len(q_records) >= 5:
-        recent = td_num(q_records[0].get("net_income"))
-        old = td_num(q_records[4].get("net_income"))
-        if recent is not None and old not in (None, 0):
-            info["earningsGrowth"] = (recent - old) / abs(old)
-
-    if info["revenueGrowth"] is None and len(q_records) >= 5:
-        recent = _latest_statement_value(q_records[:1], ["sales", "revenue"])
-        old = _latest_statement_value(q_records[4:5], ["sales", "revenue"])
-        if recent is not None and old not in (None, 0):
-            info["revenueGrowth"] = (recent - old) / abs(old)
-
-    if info["trailingEps"] is None and q_records:
-        info["trailingEps"] = _latest_statement_value(q_records[:1], ["eps_diluted", "eps_basic"])
-
-    if info["netIncomeToCommon"] is None and a_records:
-        info["netIncomeToCommon"] = _latest_statement_value(a_records[:1], ["net_income"])
-
-    if info["marketCap"] is None:
-        # Statistics may be unavailable on lower plans; valuation items will then remain neutral.
-        pass
-
-    # If PE exists but PEG is absent, derive PEG from earnings growth.
-    if info["trailingPegRatio"] is None:
-        pe = td_num(info.get("trailingPE"))
-        eg = td_num(info.get("earningsGrowth"))
-        if pe is not None and eg is not None and eg > 0:
-            info["trailingPegRatio"] = pe / (eg * 100)
-
-    # If ROE is absent, derive it from latest net income / equity.
-    if info["returnOnEquity"] is None and not balance_df.empty and a_records:
-        net_income = _latest_statement_value(a_records[:1], ["net_income"])
-        equity = td_num(balance_df.loc["Stockholders Equity"].iloc[0]) if "Stockholders Equity" in balance_df.index else None
-        if net_income is not None and equity not in (None, 0):
-            info["returnOnEquity"] = net_income / equity
-
-    ticker = TDMarketData(
-        financials=financials,
-        quarterly_financials=quarterly_financials,
-        balance_sheet=balance_df,
-        cashflow=cash_df,
-    )
-
-    # LTP remains supplied by Kotak Neo; history/fundamentals come from Twelve Data.
-    return info, hist, ticker
-
-
-
 neo = None
 logged_in = False
-
 
 # =========================================================
 # REQUEST MODELS
@@ -398,10 +28,8 @@ logged_in = False
 class LoginRequest(BaseModel):
     totp: str
 
-
 class StockRequest(BaseModel):
     company: str
-
 
 # =========================================================
 # HELPER FUNCTIONS
@@ -418,7 +46,6 @@ def num(v):
     except Exception:
         return None
 
-
 def clean_token(val):
     if val is None:
         return None
@@ -427,79 +54,53 @@ def clean_token(val):
     except (ValueError, TypeError):
         return str(val).strip()
 
+# =========================================================
+# TRADINGVIEW DATA ENGINE (REPLACES YAHOO FINANCE)
+# =========================================================
 
-def extract_fallback_metrics(t, info: dict):
+def fetch_tradingview_data(symbol):
     """
-    Fallback extractor for NSE metrics missing in yfinance .info
-    Calculates Current Ratio, FCF, ROE, Earnings Growth, and PEG directly
-    from financial statements DataFrames.
+    Fetches both technical and fundamental data directly from TradingView Scanner API.
+    Bypasses Yahoo Finance completely and does not require an API key.
     """
-    bs = getattr(t, "balance_sheet", pd.DataFrame())
-    cf = getattr(t, "cashflow", pd.DataFrame())
-    fin = getattr(t, "financials", pd.DataFrame())
-    q_fin = getattr(t, "quarterly_financials", pd.DataFrame())
-
-    # 1. Current Ratio Fallback
-    current_ratio = num(info.get("currentRatio"))
-    if current_ratio is None and not bs.empty:
-        try:
-            curr_assets = num(bs.loc["Current Assets"].iloc[0]) if "Current Assets" in bs.index else None
-            curr_liab = num(bs.loc["Current Liabilities"].iloc[0]) if "Current Liabilities" in bs.index else None
-            if curr_assets and curr_liab and curr_liab > 0:
-                current_ratio = round(curr_assets / curr_liab, 2)
-        except Exception:
-            pass
-
-    # 2. Free Cash Flow (FCF) Fallback
-    fcf = num(info.get("freeCashflow"))
-    if fcf is None and not cf.empty:
-        try:
-            ocf = num(cf.loc["Operating Cash Flow"].iloc[0]) if "Operating Cash Flow" in cf.index else None
-            capex = num(cf.loc["Capital Expenditure"].iloc[0]) if "Capital Expenditure" in cf.index else 0
-            if ocf is not None:
-                # Capex is usually reported as negative in yfinance
-                fcf = ocf + capex if capex < 0 else ocf - capex
-        except Exception:
-            pass
-
-    # 3. ROE Fallback
-    roe = num(info.get("returnOnEquity"))
-    if roe is None and not fin.empty and not bs.empty:
-        try:
-            net_income = num(fin.loc["Net Income Common Stockholders"].iloc[0]) if "Net Income Common Stockholders" in fin.index else num(fin.loc["Net Income"].iloc[0]) if "Net Income" in fin.index else None
-            equity = num(bs.loc["Stockholders Equity"].iloc[0]) if "Stockholders Equity" in bs.index else None
-            if net_income and equity and equity > 0:
-                roe = net_income / equity
-        except Exception:
-            pass
-
-    # 4. Earnings Growth Fallback (YoY Quarterly Growth)
-    eg = num(info.get("earningsGrowth"))
-    if eg is None and not q_fin.empty and q_fin.shape[1] >= 5:
-        try:
-            row_key = "Net Income Common Stockholders" if "Net Income Common Stockholders" in q_fin.index else "Net Income"
-            if row_key in q_fin.index:
-                recent_q = num(q_fin.loc[row_key].iloc[0])
-                prev_year_q = num(q_fin.loc[row_key].iloc[4])
-                if recent_q and prev_year_q and prev_year_q > 0:
-                    eg = (recent_q - prev_year_q) / abs(prev_year_q)
-        except Exception:
-            pass
-
-    # 5. PEG Ratio Fallback
-    peg = num(info.get("pegRatio"))
-    pe = num(info.get("trailingPE"))
-    if peg is None and pe and eg and eg > 0:
-        eg_pct = eg * 100
-        peg = round(pe / eg_pct, 2)
-
-    return {
-        "current_ratio": current_ratio,
-        "fcf": fcf,
-        "roe": roe,
-        "earnings_growth": eg,
-        "peg": peg
+    url = "https://scanner.tradingview.com/india/scan"
+    
+    # TradingView symbol format fix (e.g., M&M becomes M_M)
+    tv_symbol = symbol.upper().replace("&", "_").replace("-", "_")
+    ticker = f"NSE:{tv_symbol}"
+    
+    payload = {
+        "symbols": {"tickers": [ticker]},
+        "columns": [
+            "close", "volume", 
+            "price_earnings_ttm", "price_book_fq", "price_book_ratio", 
+            "return_on_equity", "debt_to_equity_fq", "debt_to_equity",
+            "total_revenue_yoy_growth", "revenue_growth_yoy", 
+            "earnings_per_share_basic_ttm", "earnings_growth",
+            "RSI", "SMA20", "SMA50", "SMA200", 
+            "beta_1_year", "current_ratio_fq", "current_ratio",
+            "market_cap_basic", "Perf.1M", "Perf.3M", "Perf.Y",
+            "price_52_week_high", "price_52_week_low", "High.52", "Low.52",
+            "free_cash_flow_margin_ttm"
+        ]
     }
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    
+    response = requests.post(url, json=payload, headers=headers, timeout=10)
+    response.raise_for_status()
+    
+    data = response.json()
+    if not data.get("data"):
+        raise Exception(f"Stock '{symbol}' not found on TradingView India scanner.")
+        
+    row = data["data"][0]["d"]
+    cols = payload["columns"]
+    return dict(zip(cols, row))
 
 
 # =========================================================
@@ -530,46 +131,29 @@ def login_neo(totp):
         )
 
         if isinstance(r, dict) and "error" in r:
-            raise HTTPException(
-                status_code=401,
-                detail=str(r)
-            )
+            raise HTTPException(status_code=401, detail=str(r))
 
-        r = neo.totp_validate(
-            mpin=os.getenv("KOTAK_MPIN")
-        )
+        r = neo.totp_validate(mpin=os.getenv("KOTAK_MPIN"))
 
         if isinstance(r, dict) and "error" in r:
-            raise HTTPException(
-                status_code=401,
-                detail=str(r)
-            )
+            raise HTTPException(status_code=401, detail=str(r))
 
         logged_in = True
-        return {
-            "ok": True,
-            "message": "Kotak Neo login successful"
-        }
+        return {"ok": True, "message": "Kotak Neo login successful"}
 
     except HTTPException:
         raise
-
     except Exception as e:
         logged_in = False
-        raise HTTPException(
-            status_code=401,
-            detail=f"Kotak Neo login failed: {str(e)}"
-        )
+        raise HTTPException(status_code=401, detail=f"Kotak Neo login failed: {str(e)}")
 
 
 # =========================================================
-# FIND NSE STOCK (UPDATED MATCHING LOGIC & BLOCK DEAL FILTER)
+# FIND NSE STOCK (KOTAK NEO)
 # =========================================================
 
 def find_stock(symbol):
     symbol = symbol.upper().strip()
-    print(f"\n--- Searching Kotak Neo for: '{symbol}' ---")
-    
     queries_to_try = [f"{symbol}-EQ", symbol]
     segments_to_try = ["nse_cm", "NSE", "bse_cm", "BSE"]
     
@@ -578,15 +162,8 @@ def find_stock(symbol):
     for seg in segments_to_try:
         for q in queries_to_try:
             try:
-                res = neo.search_scrip(
-                    exchange_segment=seg,
-                    symbol=q,
-                    expiry="",
-                    option_type="",
-                    strike_price=""
-                )
-                if not res:
-                    continue
+                res = neo.search_scrip(exchange_segment=seg, symbol=q, expiry="", option_type="", strike_price="")
+                if not res: continue
 
                 if isinstance(res, str):
                     try:
@@ -607,14 +184,12 @@ def find_stock(symbol):
 
                 if items:
                     valid_items.extend(items)
-            except Exception as e:
-                print(f"[SEARCH ERROR] seg='{seg}', query='{q}': {e}")
+            except Exception:
+                pass
 
     if not valid_items:
-        print(f"[SEARCH FAILED] No response from Kotak Neo for '{symbol}'")
         return None
 
-    # Deduplicate results
     unique_items = []
     seen = set()
     for item in valid_items:
@@ -632,40 +207,32 @@ def find_stock(symbol):
     def get_trd_sym(item):
         return str(item.get("pTrdSymbol") or item.get("trading_symbol") or item.get("trdSym") or item.get("symbol") or "").upper()
 
-    def get_sym_name(item):
-        return str(item.get("pSymbolName") or item.get("pDesc") or item.get("symbol") or item.get("name") or "").upper()
-
     def get_exch(item):
         return str(item.get("pExchSeg") or item.get("exchange_segment") or item.get("exch") or "nse_cm").lower()
 
     target_eq = f"{symbol}-EQ"
 
-    # Pass 1: Strict Exact Match for Main Equity Trading Symbol (SYMBOL-EQ)
     for item in unique_items:
         token = get_token(item)
         trd_sym = get_trd_sym(item)
         exch = get_exch(item)
 
         if token and trd_sym == target_eq:
-            print(f"[MATCH FOUND - Pass 1 (Exact EQ)] {trd_sym} | Token: {token} | Exch: {exch}")
             return {
                 "pSymbolName": symbol,
                 "pTrdSymbol": trd_sym,
                 "pSymbol": token,
                 "pExchSeg": exch if "nse" in exch else "nse_cm"
             }
-
-    # Pass 2: Fallback Exact Match on Symbol / Symbol Name (Excluding Derivatives & Block Deals)
+    
+    # Fallback to direct symbol matching
     for item in unique_items:
         token = get_token(item)
         trd_sym = get_trd_sym(item)
-        sym_name = get_sym_name(item)
         exch = get_exch(item)
 
         is_non_equity = any(trd_sym.endswith(ext) or ext in trd_sym for ext in ("-BL", "-FUT", "-CE", "-PE", "-N1", "-N2", "-E1", "-BE", "-BZ"))
-
-        if token and not is_non_equity and (trd_sym == symbol or sym_name == symbol):
-            print(f"[MATCH FOUND - Pass 2 (Clean Symbol)] {trd_sym} | Token: {token} | Exch: {exch}")
+        if token and not is_non_equity and (trd_sym == symbol):
             return {
                 "pSymbolName": symbol,
                 "pTrdSymbol": trd_sym,
@@ -673,113 +240,51 @@ def find_stock(symbol):
                 "pExchSeg": exch if "nse" in exch else "nse_cm"
             }
 
-    # Pass 3: General Cash Market Equity Fallback
-    for item in unique_items:
-        token = get_token(item)
-        trd_sym = get_trd_sym(item)
-        sym_name = get_sym_name(item)
-        exch = get_exch(item)
-
-        is_non_equity = any(trd_sym.endswith(ext) or ext in trd_sym for ext in ("-BL", "-FUT", "-CE", "-PE", "-N1", "-N2", "-E1"))
-
-        if token and not is_non_equity and (symbol in trd_sym or symbol in sym_name):
-            print(f"[MATCH FOUND - Pass 3 (Fallback)] {trd_sym} | Token: {token} | Exch: {exch}")
-            return {
-                "pSymbolName": symbol,
-                "pTrdSymbol": trd_sym,
-                "pSymbol": token,
-                "pExchSeg": exch if "nse" in exch else "nse_cm"
-            }
-
-    print(f"[SEARCH FAILED] No valid main equity token extracted for '{symbol}'")
     return None
 
-
 # =========================================================
-# INTELLIGENT 100-POINT SCORING ENGINE
+# INTELLIGENT 100-POINT SCORING ENGINE (TradingView Edition)
 # =========================================================
 
-def calculate_rsi(close, n=14):
-    d = close.diff()
-    gain = d.clip(lower=0).rolling(n).mean()
-    loss = (-d.clip(upper=0)).rolling(n).mean()
-    rs = gain / loss.replace(0, pd.NA)
-    result = 100 - (100 / (1 + rs))
-    return num(result.iloc[-1])
-
-
-def analyze_fundamentals(info, ticker):
+def analyze_fundamentals(tv_data):
     pts = 0
     max_pts = 40
     data_points_found = 0
-    total_metrics = 7
     positives = []
     warnings = []
 
-    fallbacks = extract_fallback_metrics(ticker, info)
-
-    pe = num(info.get("trailingPE"))
-    ind_pe = num(info.get("trailingPegRatio")) or num(info.get("forwardPE"))
-    roe = fallbacks["roe"]
-    rg = num(info.get("revenueGrowth"))
-    eg = fallbacks["earnings_growth"]
-    de = num(info.get("debtToEquity"))
-    net_income = num(info.get("netIncomeToCommon"))
-    ocf = num(info.get("operatingCashflow"))
+    pe = num(tv_data.get("price_earnings_ttm"))
+    ind_pe = 25.0 
+    
+    roe_pct = num(tv_data.get("return_on_equity")) 
+    rg_pct = num(tv_data.get("total_revenue_yoy_growth")) or num(tv_data.get("revenue_growth_yoy"))
+    de = num(tv_data.get("debt_to_equity_fq")) or num(tv_data.get("debt_to_equity"))
 
     if pe is not None:
         data_points_found += 1
-        if ind_pe and ind_pe > 0:
-            pe_diff = ((pe - ind_pe) / ind_pe) * 100
-            if pe_diff < -15:
-                pts += 8
-                positives.append(f"PE ({pe:.1f}) is significantly lower than Forward/Industry PE ({ind_pe:.1f})")
-            elif pe_diff <= 5:
-                pts += 6
-                positives.append(f"PE ({pe:.1f}) is reasonably aligned with Sector/Forward PE ({ind_pe:.1f})")
-            elif pe_diff <= 25:
-                pts += 3
-            else:
-                warnings.append(f"PE ({pe:.1f}) is trading at a high premium vs Sector ({ind_pe:.1f})")
-        else:
-            if pe <= 18:
-                pts += 8
-                positives.append(f"Attractive PE ratio of {pe:.1f}")
-            elif pe <= 28:
-                pts += 6
-            elif pe <= 40:
-                pts += 3
-            else:
-                warnings.append(f"High PE valuation ({pe:.1f})")
-
-    if eg is not None:
-        data_points_found += 1
-        eg_pct = eg * 100
-        if eg_pct >= 25:
-            pts += 7
-            positives.append(f"Exceptional quarterly EPS Growth (+{eg_pct:.1f}%)")
-        elif eg_pct >= 15:
-            pts += 5
-            positives.append(f"Solid EPS Growth (+{eg_pct:.1f}%)")
-        elif eg_pct >= 5:
+        if pe <= 18:
+            pts += 8
+            positives.append(f"Attractive PE ratio of {pe:.1f}")
+        elif pe <= 28:
+            pts += 6
+            positives.append(f"Reasonable PE ratio of {pe:.1f}")
+        elif pe <= 40:
             pts += 3
-        elif eg_pct < 0:
-            warnings.append(f"Earnings contraction (-{abs(eg_pct):.1f}%)")
+        else:
+            warnings.append(f"High PE valuation ({pe:.1f})")
 
-    if rg is not None:
+    if rg_pct is not None:
         data_points_found += 1
-        rg_pct = rg * 100
         if rg_pct >= 15:
-            pts += 5
+            pts += 8 
             positives.append(f"Strong Revenue Growth (+{rg_pct:.1f}%)")
         elif rg_pct >= 8:
-            pts += 3
+            pts += 5
         elif rg_pct < 0:
             warnings.append(f"Declining Revenue (-{abs(rg_pct):.1f}%)")
 
-    if roe is not None:
+    if roe_pct is not None:
         data_points_found += 1
-        roe_pct = roe * 100
         if roe_pct >= 20:
             pts += 8
             positives.append(f"High Return on Equity (ROE {roe_pct:.1f}%)")
@@ -793,31 +298,22 @@ def analyze_fundamentals(info, ticker):
 
     if de is not None:
         data_points_found += 1
-        if de <= 30:
-            pts += 6
-            positives.append(f"Low Debt/Equity ratio ({de:.1f}) - Minimal leverage risk")
-        elif de <= 70:
-            pts += 4
-        elif de <= 120:
+        if de <= 0.3: 
+            pts += 8
+            positives.append(f"Low Debt/Equity ratio ({de:.2f}) - Minimal leverage risk")
+        elif de <= 0.7:
+            pts += 5
+        elif de <= 1.2:
             pts += 2
         else:
-            warnings.append(f"High Debt to Equity ratio ({de:.1f})")
+            warnings.append(f"High Debt to Equity ratio ({de:.2f})")
 
-    if ocf is not None and net_income is not None:
-        data_points_found += 2
-        if ocf > 0 and net_income > 0:
-            quality_ratio = ocf / net_income
-            if quality_ratio >= 0.9:
-                pts += 6
-                positives.append("High Earnings Quality (Operating Cash Flow aligns well with Net Profit)")
-            elif quality_ratio >= 0.6:
-                pts += 4
-            else:
-                warnings.append("Profit-Cash Flow Mismatch: Cash flow from operations is significantly lower than reported Net Profit")
-        elif ocf <= 0 and net_income > 0:
-            warnings.append("Negative Operating Cash Flow despite reported profits")
-
-    conf = (data_points_found / total_metrics)
+    if data_points_found > 0:
+        multiplier = 40 / (data_points_found * 8) 
+        pts = int(pts * multiplier)
+        
+    pts = min(pts, 40)
+    conf = (data_points_found / 4)
 
     return {
         "score": pts,
@@ -828,39 +324,40 @@ def analyze_fundamentals(info, ticker):
         "data": {
             "pe": pe,
             "industry_pe": ind_pe,
-            "roe_pct": round(roe * 100, 2) if roe is not None else None,
-            "revenue_growth_pct": round(rg * 100, 2) if rg is not None else None,
-            "earnings_growth_pct": round(eg * 100, 2) if eg is not None else None,
+            "roe_pct": round(roe_pct, 2) if roe_pct is not None else None,
+            "revenue_growth_pct": round(rg_pct, 2) if rg_pct is not None else None,
             "debt_to_equity": de
         }
     }
 
-
-def analyze_technicals(hist):
-    if hist is None or hist.empty or len(hist) < 50:
-        return {"score": 0, "max": 25, "confidence": 0.0, "positives": [], "warnings": [], "data": {}}
-
+def analyze_technicals(tv_data):
     positives = []
     warnings = []
     pts = 0
 
-    c = hist["Close"].dropna()
-    v = hist["Volume"].dropna()
-    last_price = float(c.iloc[-1])
+    last_price = num(tv_data.get("close"))
+    if not last_price:
+        return {"score": 0, "max": 25, "confidence": 0.0, "positives": [], "warnings": [], "data": {}}
 
-    sma20 = float(c.rolling(20).mean().iloc[-1])
-    sma50 = float(c.rolling(50).mean().iloc[-1])
-    sma200 = float(c.rolling(200).mean().iloc[-1]) if len(c) >= 200 else sma50
-    rv = calculate_rsi(c)
+    sma20 = num(tv_data.get("SMA20"))
+    sma50 = num(tv_data.get("SMA50"))
+    sma200 = num(tv_data.get("SMA200"))
+    rv = num(tv_data.get("RSI"))
+    m20 = num(tv_data.get("Perf.1M"))
+    m60 = num(tv_data.get("Perf.3M"))
 
-    if last_price > sma50: pts += 3
-    if last_price > sma200: pts += 3
-    if sma50 > sma200: pts += 2
+    high_52 = num(tv_data.get("price_52_week_high")) or num(tv_data.get("High.52"))
+    low_52 = num(tv_data.get("price_52_week_low")) or num(tv_data.get("Low.52"))
 
-    if last_price > sma50 > sma200:
-        positives.append("Strong Bullish Trend Structure (Price > SMA50 > SMA200)")
-    elif last_price < sma50 < sma200:
-        warnings.append("Bearish Trend Alignment (Price < SMA50 < SMA200)")
+    if sma50 and sma200:
+        if last_price > sma50: pts += 3
+        if last_price > sma200: pts += 3
+        if sma50 > sma200: pts += 2
+
+        if last_price > sma50 > sma200:
+            positives.append("Strong Bullish Trend Structure (Price > SMA50 > SMA200)")
+        elif last_price < sma50 < sma200:
+            warnings.append("Bearish Trend Alignment (Price < SMA50 < SMA200)")
 
     if rv is not None:
         if 55 <= rv <= 70:
@@ -875,40 +372,26 @@ def analyze_technicals(hist):
             pts += 1
             warnings.append(f"RSI Oversold ({rv:.1f}) - Strong weakness but potential bounce zone")
 
-    m20 = ((last_price / float(c.iloc[-21])) - 1) * 100 if len(c) >= 21 else 0
-    m60 = ((last_price / float(c.iloc[-61])) - 1) * 100 if len(c) >= 61 else 0
-
-    if m20 >= 4:
-        pts += 3
-        positives.append(f"Positive 20-day momentum (+{m20:.1f}%)")
-    elif m20 < -5:
-        warnings.append(f"Negative short-term momentum ({m20:.1f}% 20D return)")
-
-    if m60 >= 8:
-        pts += 3
-    elif m60 < 0:
-        pts += 0
-
-    avg_vol_20 = float(v.rolling(20).mean().iloc[-1]) if len(v) >= 20 else float(v.mean())
-    latest_vol = float(v.iloc[-1])
-    if avg_vol_20 > 0:
-        vol_ratio = latest_vol / avg_vol_20
-        if vol_ratio >= 1.5 and m20 > 0:
+    if m20 is not None:
+        if m20 >= 4:
             pts += 4
-            positives.append(f"High Volume Expansion ({vol_ratio:.1f}x 20-day avg volume)")
-        elif vol_ratio >= 1.0:
-            pts += 2
+            positives.append(f"Positive 1-Month momentum (+{m20:.1f}%)")
+        elif m20 < -5:
+            warnings.append(f"Negative short-term momentum ({m20:.1f}% 1M return)")
 
-    high_52 = float(c.max())
-    low_52 = float(c.min())
-    dist_high = ((last_price - high_52) / high_52) * 100
-    dist_low = ((last_price - low_52) / low_52) * 100
+    if m60 is not None and m60 >= 8:
+        pts += 3
 
-    if dist_high >= -5:
-        warnings.append("Trading near 52-Week High resistance zone")
-    elif dist_low <= 8:
-        positives.append("Trading close to 52-Week Low support base")
-        pts += 2
+    dist_high, dist_low = None, None
+    if high_52 and low_52 and last_price:
+        dist_high = ((last_price - high_52) / high_52) * 100
+        dist_low = ((last_price - low_52) / low_52) * 100
+        
+        if dist_high >= -5:
+            warnings.append("Trading near 52-Week High resistance zone")
+        elif dist_low <= 8:
+            positives.append("Trading close to 52-Week Low support base")
+            pts += 3
 
     return {
         "score": min(pts, 25),
@@ -917,35 +400,37 @@ def analyze_technicals(hist):
         "positives": positives,
         "warnings": warnings,
         "data": {
-            "rsi": round(rv, 2) if rv is not None else None,
-            "sma20": round(sma20, 2),
-            "sma50": round(sma50, 2),
-            "sma200": round(sma200, 2),
-            "momentum_20d_pct": round(m20, 2),
-            "momentum_60d_pct": round(m60, 2),
-            "dist_52w_high_pct": round(dist_high, 2),
-            "dist_52w_low_pct": round(dist_low, 2)
+            "rsi": round(rv, 2) if rv else None,
+            "sma20": round(sma20, 2) if sma20 else None,
+            "sma50": round(sma50, 2) if sma50 else None,
+            "sma200": round(sma200, 2) if sma200 else None,
+            "momentum_1m_pct": round(m20, 2) if m20 else None,
+            "momentum_3m_pct": round(m60, 2) if m60 else None,
+            "dist_52w_high_pct": round(dist_high, 2) if dist_high else None,
+            "dist_52w_low_pct": round(dist_low, 2) if dist_low else None
         }
     }
 
-
-def analyze_valuation(info, ticker):
+def analyze_valuation(tv_data):
     positives = []
     warnings = []
     pts = 0
-    max_pts = 20
     found = 0
 
-    fallbacks = extract_fallback_metrics(ticker, info)
-    peg = fallbacks["peg"]
-    pb = num(info.get("priceToBook"))
-    fcf = fallbacks["fcf"]
-    mcap = num(info.get("marketCap"))
+    pe = num(tv_data.get("price_earnings_ttm"))
+    eg_pct = num(tv_data.get("earnings_growth")) or num(tv_data.get("total_revenue_yoy_growth"))
+    
+    peg = None
+    if pe and eg_pct and eg_pct > 0:
+        peg = round(pe / eg_pct, 2)
+
+    pb = num(tv_data.get("price_book_fq")) or num(tv_data.get("price_book_ratio"))
+    fcf_margin = num(tv_data.get("free_cash_flow_margin_ttm"))
 
     if peg is not None and peg > 0:
         found += 1
         if peg <= 1.0:
-            pts += 7
+            pts += 8
             positives.append(f"Attractive PEG ratio ({peg:.2f} <= 1.0) - Growth at reasonable price")
         elif peg <= 1.5:
             pts += 5
@@ -954,18 +439,15 @@ def analyze_valuation(info, ticker):
         else:
             warnings.append(f"High PEG ratio ({peg:.2f}) indicates overvaluation relative to growth")
 
-    if fcf is not None and mcap is not None and mcap > 0:
+    if fcf_margin is not None:
         found += 1
-        fcf_yield = (fcf / mcap) * 100
-        if fcf_yield >= 4.5:
-            pts += 7
-            positives.append(f"Strong Free Cash Flow Yield ({fcf_yield:.2f}%)")
-        elif fcf_yield >= 2.0:
-            pts += 5
-        elif fcf_yield > 0:
-            pts += 2
-        else:
-            warnings.append("Negative Free Cash Flow Yield")
+        if fcf_margin >= 15:
+            pts += 6
+            positives.append(f"Strong Free Cash Flow Margin ({fcf_margin:.1f}%)")
+        elif fcf_margin >= 5:
+            pts += 4
+        elif fcf_margin < 0:
+            warnings.append("Negative Free Cash Flow Margin")
 
     if pb is not None and pb > 0:
         found += 1
@@ -979,61 +461,50 @@ def analyze_valuation(info, ticker):
         else:
             warnings.append(f"Elevated Price-to-Book multiple ({pb:.2f})")
 
-    conf = (found / 3.0)
+    conf = (found / 3.0) if found > 0 else 0.5
+    
+    if found > 0:
+        pts = int(pts * (20 / (found * 8))) 
+    pts = min(pts, 20)
 
     return {
-        "score": min(pts, 20),
-        "max": max_pts,
+        "score": pts,
+        "max": 20,
         "confidence": conf,
         "positives": positives,
         "warnings": warnings,
         "data": {
             "peg_ratio": peg,
             "price_to_book": pb,
-            "fcf_yield_pct": round((fcf / mcap) * 100, 2) if (fcf and mcap) else None
+            "fcf_margin_pct": fcf_margin
         }
     }
 
-
-def analyze_risk(info, hist, ticker):
+def analyze_risk(tv_data):
     positives = []
     warnings = []
     pts = 0
 
-    fallbacks = extract_fallback_metrics(ticker, info)
-    beta = num(info.get("beta"))
-    current_ratio = fallbacks["current_ratio"]
+    beta = num(tv_data.get("beta_1_year"))
+    current_ratio = num(tv_data.get("current_ratio_fq")) or num(tv_data.get("current_ratio"))
 
     if beta is not None:
         if 0.5 <= beta <= 1.1:
-            pts += 5
+            pts += 7
             positives.append(f"Moderate Market Beta ({beta:.2f}) - Lower systematic risk")
         elif beta < 0.5:
-            pts += 4
+            pts += 5
         elif beta <= 1.5:
-            pts += 2
+            pts += 3
         else:
             warnings.append(f"High Beta ({beta:.2f}) - Elevated volatility relative to the market")
 
-    if hist is not None and not hist.empty and len(hist) > 30:
-        c = hist["Close"].dropna()
-        roll_max = c.cummax()
-        drawdown = (c - roll_max) / roll_max
-        max_dd = abs(float(drawdown.min())) * 100
-        if max_dd <= 20:
-            pts += 5
-            positives.append(f"Low Maximum Drawdown over 1Y ({max_dd:.1f}%)")
-        elif max_dd <= 35:
-            pts += 3
-        else:
-            warnings.append(f"High 1-Year Maximum Drawdown ({max_dd:.1f}%)")
-
     if current_ratio is not None:
         if current_ratio >= 1.5:
-            pts += 5
+            pts += 8
             positives.append(f"Strong Current Ratio ({current_ratio:.2f})")
         elif current_ratio >= 1.0:
-            pts += 3
+            pts += 4
         else:
             warnings.append(f"Low Current Ratio ({current_ratio:.2f}) - Working capital pressure")
 
@@ -1054,10 +525,10 @@ def analyze_risk(info, hist, ticker):
 # FAIR VALUE & DECISION ENGINE
 # =========================================================
 
-def calculate_fair_value(info, ltp):
-    eps = num(info.get("trailingEps")) or num(info.get("forwardEps"))
-    pe = num(info.get("trailingPE"))
-    ind_pe = num(info.get("trailingPegRatio")) or num(info.get("forwardPE")) or 20.0
+def calculate_fair_value(tv_data, ltp):
+    eps = num(tv_data.get("earnings_per_share_basic_ttm"))
+    pe = num(tv_data.get("price_earnings_ttm"))
+    ind_pe = 25.0
 
     if eps and eps > 0:
         target_pe = min(pe if pe else ind_pe, ind_pe * 1.1) if pe else ind_pe
@@ -1079,7 +550,6 @@ def calculate_fair_value(info, ltp):
         "buy_zone": "N/A",
         "valuation_status": "Neutral"
     }
-
 
 def make_decision(total_score, f_score, t_score, warnings):
     critical_warnings = len([w for w in warnings if "high" in w.lower() or "contraction" in w.lower()])
@@ -1103,11 +573,9 @@ def home():
     frontend = (Path(__file__).parent / "../frontend/index.html").resolve()
     return FileResponse(str(frontend))
 
-
 @app.post("/api/login")
 def api_login(x: LoginRequest):
     return login_neo(x.totp)
-
 
 @app.post("/api/score")
 def api_score(x: StockRequest):
@@ -1118,18 +586,10 @@ def api_score(x: StockRequest):
     stock = find_stock(symbol)
 
     if not stock:
-        raise HTTPException(
-            status_code=404,
-            detail=f"NSE equity not found for '{symbol}'."
-        )
+        raise HTTPException(status_code=404, detail=f"NSE equity not found for '{symbol}'.")
 
     def extract_ltp(obj):
-        preferred_keys = (
-            "ltp", "LTP", "last_price", "lastPrice",
-            "lastTradedPrice", "last_traded_price",
-            "pLtp", "pLTP", "lp"
-        )
-
+        preferred_keys = ("ltp", "LTP", "last_price", "lastPrice", "lastTradedPrice", "last_traded_price", "pLtp", "pLTP", "lp")
         def walk(value):
             if isinstance(value, dict):
                 for key in preferred_keys:
@@ -1137,26 +597,21 @@ def api_score(x: StockRequest):
                         n = num(value.get(key))
                         if n is not None and n > 0:
                             return n
-
                 for key in ("data", "result", "quotes", "quote", "response"):
                     if key in value:
                         found = walk(value[key])
                         if found is not None:
                             return found
-
                 for child in value.values():
                     found = walk(child)
                     if found is not None:
                         return found
-
             elif isinstance(value, list):
                 for child in value:
                     found = walk(child)
                     if found is not None:
                         return found
-
             return None
-
         return walk(obj)
 
     token = clean_token(stock.get("pSymbol"))
@@ -1168,10 +623,7 @@ def api_score(x: StockRequest):
     ltp = None
     try:
         q = neo.quotes(
-            instrument_tokens=[{
-                "instrument_token": token,
-                "exchange_segment": exchange
-            }],
+            instrument_tokens=[{"instrument_token": token, "exchange_segment": exchange}],
             quote_type="all"
         )
         ltp = extract_ltp(q)
@@ -1181,18 +633,16 @@ def api_score(x: StockRequest):
     if ltp is None:
         raise HTTPException(status_code=502, detail="Unable to retrieve live LTP from Kotak Neo.")
 
+    # --- Fetch Everything via TradingView ---
     try:
-        info, hist, td_data = load_twelve_data(symbol)
+        tv_data = fetch_tradingview_data(symbol)
     except Exception as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Twelve Data fetch error: {str(e)}"
-        )
+        raise HTTPException(status_code=502, detail=f"TradingView data fetch error: {str(e)}")
 
-    f_res = analyze_fundamentals(info, td_data)
-    t_res = analyze_technicals(hist)
-    v_res = analyze_valuation(info, td_data)
-    r_res = analyze_risk(info, hist, td_data)
+    f_res = analyze_fundamentals(tv_data)
+    t_res = analyze_technicals(tv_data)
+    v_res = analyze_valuation(tv_data)
+    r_res = analyze_risk(tv_data)
 
     data_confidence_pct = round(
         ((f_res["confidence"] * 0.40) +
@@ -1209,7 +659,7 @@ def api_score(x: StockRequest):
     warnings = f_res["warnings"] + t_res["warnings"] + v_res["warnings"] + r_res["warnings"]
 
     decision = make_decision(total_score, f_res["score"], t_res["score"], warnings)
-    valuation_metrics = calculate_fair_value(info, ltp)
+    valuation_metrics = calculate_fair_value(tv_data, ltp)
 
     return {
         "company": stock.get("pSymbolName"),
@@ -1229,7 +679,6 @@ def api_score(x: StockRequest):
         "why_buy": positives,
         "risk_warnings": warnings,
         "fair_value_analysis": valuation_metrics,
-        "data_note": "Live LTP: Kotak Neo. Financials & Technical History: Twelve Data.",
+        "data_note": "Live LTP: Kotak Neo. Financials & Technical History: TradingView Scanner.",
         "disclaimer": "Decision-support algorithm; not personal financial or investment advice."
     }
-
