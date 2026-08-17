@@ -816,29 +816,33 @@ def extract_ltp(obj):
                 return result
     return None
 
-def analyze_symbol(symbol: str, neo_client):
+def analyze_symbol(symbol: str, neo_client=None):
     symbol = symbol.strip().upper()
     if not symbol:
         raise HTTPException(status_code=400, detail="Stock symbol is required.")
 
-    stock = find_stock(symbol, neo_client)
-    if not stock:
-        raise HTTPException(status_code=404, detail=f"Stock '{symbol}' not found on Kotak Neo.")
-
-    try:
-        quote = neo_client.quotes(
-            instrument_tokens=[{
-                "instrument_token": clean_token(stock.get("pSymbol")),
-                "exchange_segment": stock.get("pExchSeg", "nse_cm").lower()
-            }],
-            quote_type="all"
-        )
-        ltp = extract_ltp(quote)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Unable to retrieve live LTP: {str(e)}")
-
-    if ltp is None:
-        raise HTTPException(status_code=502, detail="Unable to retrieve live LTP.")
+    # Kotak Neo is the preferred live broker quote source.
+    # If the user has not logged in, continue with TradingView scanner data so
+    # the public analysis dashboard is still functional.
+    ltp = None
+    live_source = "TradingView Scanner"
+    if neo_client is not None:
+        try:
+            stock = find_stock(symbol, neo_client)
+            if stock:
+                quote = neo_client.quotes(
+                    instrument_tokens=[{
+                        "instrument_token": clean_token(stock.get("pSymbol")),
+                        "exchange_segment": stock.get("pExchSeg", "nse_cm").lower()
+                    }],
+                    quote_type="all"
+                )
+                ltp = extract_ltp(quote)
+                if ltp is not None:
+                    live_source = "Kotak Neo"
+        except Exception:
+            # Fall back to TradingView below rather than making the whole dashboard unusable.
+            ltp = None
 
     try:
         tv_data = fetch_tradingview_data(symbol)
@@ -847,11 +851,16 @@ def analyze_symbol(symbol: str, neo_client):
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 
+    if ltp is None:
+        ltp = num(tv_data.get("close"))
+    if ltp is None:
+        raise HTTPException(status_code=502, detail="Live market price is currently unavailable.")
+
     result = score_from_tv(symbol, tv_data, ltp)
     result["price_change_pct"] = num(tv_data.get("change"))
     result["price_change_abs"] = num(tv_data.get("change_abs"))
     result["volume"] = num(tv_data.get("volume"))
-    result["live_ltp_source"] = "Kotak Neo"
+    result["live_ltp_source"] = live_source
     result["market_data_source"] = "TradingView Scanner"
 
     # Keep the last 1000 analyses in memory for the current Render instance.
@@ -899,8 +908,14 @@ def api_login(x: LoginRequest):
 
 @app.post("/api/score")
 def api_score(x: StockRequest, request: Request):
-    session = get_session(request)
-    return analyze_symbol(x.company, session["neo"])
+    session_id = request.headers.get("X-StockMeter-Session", "").strip()
+    neo = None
+    if session_id:
+        try:
+            neo = get_session(request)["neo"]
+        except HTTPException:
+            neo = None
+    return analyze_symbol(x.company, neo)
 
 @app.get("/api/market-overview")
 def api_market_overview():
@@ -931,37 +946,49 @@ def api_market_overview():
 
 @app.get("/api/news")
 def api_news(q: str = "Indian stock market", limit: int = 5):
-    try:
-        limit = max(1, min(int(limit), 20))
-        q = (q or "Indian stock market").strip()[:120]
-        rss_url = (
+    limit = max(1, min(int(limit), 20))
+    q = (q or "Indian stock market").strip()[:120]
+    urls = [
+        (
             "https://news.google.com/rss/search?q="
             + quote_plus(q + " when:2d")
-            + "&hl=en-IN&gl=IN&ceid=IN%3Aen"
-        )
-        r = requests.get(
-            rss_url,
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=10
-        )
-        r.raise_for_status()
-        root = ET.fromstring(r.content)
-
-        items = []
-        for item in root.findall("./channel/item")[:limit]:
-            items.append({
-                "title": item.findtext("title") or "Market update",
-                "link": item.findtext("link") or "",
-                "published": item.findtext("pubDate") or "",
-                "source": "Google News"
-            })
-        return {"items": items}
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"News fetch failed: {str(e)}")
+            + "&hl=en-IN&gl=IN&ceid=IN%3Aen",
+            "Google News"
+        ),
+        (
+            "https://www.bing.com/news/search?q=" + quote_plus(q) + "&format=rss",
+            "Bing News"
+        ),
+    ]
+    errors=[]
+    for rss_url, provider in urls:
+        try:
+            r = requests.get(rss_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            r.raise_for_status()
+            root = ET.fromstring(r.content)
+            items=[]
+            for item in root.findall("./channel/item")[:limit]:
+                source_el=item.find("source")
+                source=(source_el.text.strip() if source_el is not None and source_el.text else provider)
+                items.append({
+                    "title": item.findtext("title") or "Market update",
+                    "link": item.findtext("link") or "",
+                    "published": item.findtext("pubDate") or "",
+                    "source": source,
+                })
+            if items:
+                return {"items": items, "provider": provider, "updated_at": datetime.now(timezone.utc).isoformat()}
+        except Exception as e:
+            errors.append(f"{provider}: {e}")
+    raise HTTPException(status_code=502, detail="News fetch failed. " + " | ".join(errors))
 
 @app.post("/api/compare")
 def api_compare(x: CompareRequest, request: Request):
-    session = get_session(request)
+    session_id = request.headers.get("X-StockMeter-Session", "").strip()
+    neo = None
+    if session_id:
+        try: neo = get_session(request)["neo"]
+        except HTTPException: neo = None
     symbols = list(dict.fromkeys(
         s.strip().upper() for s in x.symbols if s and s.strip()
     ))[:12]
@@ -971,7 +998,7 @@ def api_compare(x: CompareRequest, request: Request):
     results, errors = [], []
     for symbol in symbols:
         try:
-            results.append(analyze_symbol(symbol, session["neo"]))
+            results.append(analyze_symbol(symbol, neo))
         except HTTPException as e:
             errors.append({"symbol": symbol, "error": str(e.detail)})
 
@@ -983,7 +1010,11 @@ def api_compare(x: CompareRequest, request: Request):
 
 @app.post("/api/screener")
 def api_screener(x: ScreenerRequest, request: Request):
-    session = get_session(request)
+    session_id = request.headers.get("X-StockMeter-Session", "").strip()
+    neo = None
+    if session_id:
+        try: neo = get_session(request)["neo"]
+        except HTTPException: neo = None
 
     symbols = list(dict.fromkeys(
         s.strip().upper() for s in (x.symbols or DEFAULT_UNIVERSE)
@@ -993,7 +1024,7 @@ def api_screener(x: ScreenerRequest, request: Request):
     results, errors = [], []
     for symbol in symbols:
         try:
-            result = analyze_symbol(symbol, session["neo"])
+            result = analyze_symbol(symbol, neo)
             b = result["breakdown"]
             fdata = b["fundamental"]["data"]
             tdata = b["technical"]["data"]
@@ -1033,7 +1064,11 @@ def api_screener(x: ScreenerRequest, request: Request):
 
 @app.post("/api/portfolio")
 def api_portfolio(x: PortfolioRequest, request: Request):
-    session = get_session(request)
+    session_id = request.headers.get("X-StockMeter-Session", "").strip()
+    neo = None
+    if session_id:
+        try: neo = get_session(request)["neo"]
+        except HTTPException: neo = None
     if not x.holdings:
         raise HTTPException(status_code=400, detail="Portfolio is empty.")
 
@@ -1048,7 +1083,7 @@ def api_portfolio(x: PortfolioRequest, request: Request):
             continue
 
         try:
-            result = analyze_symbol(holding.symbol, session["neo"])
+            result = analyze_symbol(holding.symbol, neo)
             invested = holding.quantity * holding.avg_price
             value = holding.quantity * result["ltp"]
             pnl = value - invested
@@ -1129,8 +1164,6 @@ def api_account_limits(request: Request):
 
 @app.get("/api/history")
 def api_history(symbol: Optional[str] = None, limit: int = 50, request: Request = None):
-    if request is not None:
-        get_session(request)
     limit = max(1, min(int(limit), 200))
     symbol = symbol.strip().upper() if symbol else None
     items = [
@@ -1141,7 +1174,6 @@ def api_history(symbol: Optional[str] = None, limit: int = 50, request: Request 
 
 @app.post("/api/history")
 def api_history_add(x: HistoryRequest, request: Request):
-    get_session(request)
     item = {
         "time": datetime.now(timezone.utc).isoformat(),
         "symbol": x.symbol.strip().upper(),
@@ -1193,8 +1225,12 @@ def api_alert_delete(alert_id: str, request: Request):
 
 @app.post("/api/alerts/check")
 def api_alert_check(x: AlertRequest, request: Request):
-    session = get_session(request)
-    result = analyze_symbol(x.symbol, session["neo"])
+    session_id = request.headers.get("X-StockMeter-Session", "").strip()
+    neo = None
+    if session_id:
+        try: neo = get_session(request)["neo"]
+        except HTTPException: neo = None
+    result = analyze_symbol(x.symbol, neo)
 
     triggered = False
     reasons = []
