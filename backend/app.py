@@ -27,7 +27,6 @@ app = FastAPI(title="StockScore Live - 100pt Model")
 neo = None
 logged_in = False
 
-# List of multiple User-Agents to bypass Yahoo Finance rate limits
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -46,7 +45,7 @@ class StockRequest(BaseModel):
     company: str
 
 # =========================================================
-# HELPER FUNCTIONS
+# HELPER FUNCTIONS (WITH PROXY BYPASS)
 # =========================================================
 
 def num(v):
@@ -68,34 +67,95 @@ def clean_token(val):
     except (ValueError, TypeError):
         return str(val).strip()
 
+def fetch_working_proxy():
+    """Scrape and test free proxies to bypass Render/Cloud IP blocks."""
+    print("Fetching free proxy to bypass IP block...")
+    try:
+        urls = [
+            "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=3000&country=all&ssl=yes&anonymity=all",
+            "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt"
+        ]
+        proxies = []
+        for u in urls:
+            try:
+                res = requests.get(u, timeout=5)
+                if res.status_code == 200:
+                    urls_list = res.text.strip().split('\n')
+                    proxies.extend([p.strip() for p in urls_list if p.strip()])
+            except:
+                continue
+                
+        if not proxies: return None
+        
+        # Clean list and shuffle
+        proxies = [p for p in proxies if ":" in p]
+        random.shuffle(proxies)
+        
+        for p in proxies[:20]: # Test up to 20 proxies
+            proxy_url = f"http://{p}"
+            proxy_dict = {"http": proxy_url, "https": proxy_url}
+            try:
+                # Test against a lightweight Yahoo Finance endpoint
+                test = requests.get(
+                    "https://query2.finance.yahoo.com/v1/test/getcrumb",
+                    proxies=proxy_dict,
+                    timeout=3,
+                    headers={'User-Agent': 'Mozilla/5.0'}
+                )
+                if test.status_code == 200:
+                    print(f"[SUCCESS] Found working proxy: {proxy_url}")
+                    return proxy_url
+            except:
+                continue
+    except Exception as e:
+        print(f"Proxy scraper failed: {e}")
+    return None
+
 def fetch_yfinance_with_retry(symbol, max_retries=3):
     """
-    Fetches Yahoo Finance data with User-Agent rotation and exponential backoff 
-    to handle '429 Too Many Requests' errors.
+    Fetches Yahoo Finance data with robust proxy rotation and IP-spoofing headers.
     """
     last_exception = None
+    working_proxy = None
     
     for attempt in range(max_retries):
         try:
-            # Rotate session & User-Agent per attempt
             session = requests.Session()
+            # Add random IP spoofing headers along with User-Agent
+            fake_ip = f"{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}"
             session.headers.update({
                 'User-Agent': random.choice(USER_AGENTS),
                 'Accept': '*/*',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive'
+                'Connection': 'keep-alive',
+                'X-Forwarded-For': fake_ip,
+                'X-Real-IP': fake_ip
             })
             
+            if attempt > 0:
+                print(f"[RETRY] Attempt {attempt+1}: Render IP likely blocked. Trying via Proxy...")
+                if not working_proxy:
+                    working_proxy = fetch_working_proxy()
+                
+                if working_proxy:
+                    session.proxies.update({
+                        "http": working_proxy, 
+                        "https": working_proxy
+                    })
+            
             t = yf.Ticker(symbol + ".NS", session=session)
+            
             info = t.info or {}
             hist = t.history(period="1y", auto_adjust=False)
             
+            if not info and hist.empty:
+                raise Exception("Empty data returned. IP or Proxy might be blocked.")
+                
             return t, info, hist
             
         except Exception as e:
             last_exception = e
-            # Exponential backoff: Wait 2s, then 4s, then 8s before retrying
-            time.sleep(2 ** (attempt + 1))
+            working_proxy = None # Force a new proxy on the next loop iteration
+            print(f"YFinance Attempt {attempt + 1} failed: {str(e)}")
             
     raise last_exception
 
@@ -190,36 +250,21 @@ def login_neo(totp):
         )
 
         if isinstance(r, dict) and "error" in r:
-            raise HTTPException(
-                status_code=401,
-                detail=str(r)
-            )
+            raise HTTPException(status_code=401, detail=str(r))
 
-        r = neo.totp_validate(
-            mpin=os.getenv("KOTAK_MPIN")
-        )
+        r = neo.totp_validate(mpin=os.getenv("KOTAK_MPIN"))
 
         if isinstance(r, dict) and "error" in r:
-            raise HTTPException(
-                status_code=401,
-                detail=str(r)
-            )
+            raise HTTPException(status_code=401, detail=str(r))
 
         logged_in = True
-        return {
-            "ok": True,
-            "message": "Kotak Neo login successful"
-        }
+        return {"ok": True, "message": "Kotak Neo login successful"}
 
     except HTTPException:
         raise
-
     except Exception as e:
         logged_in = False
-        raise HTTPException(
-            status_code=401,
-            detail=f"Kotak Neo login failed: {str(e)}"
-        )
+        raise HTTPException(status_code=401, detail=f"Kotak Neo login failed: {str(e)}")
 
 
 # =========================================================
@@ -236,15 +281,8 @@ def find_stock(symbol):
     for seg in segments_to_try:
         for q in queries_to_try:
             try:
-                res = neo.search_scrip(
-                    exchange_segment=seg,
-                    symbol=q,
-                    expiry="",
-                    option_type="",
-                    strike_price=""
-                )
-                if not res:
-                    continue
+                res = neo.search_scrip(exchange_segment=seg, symbol=q, expiry="", option_type="", strike_price="")
+                if not res: continue
 
                 if isinstance(res, str):
                     try:
@@ -816,15 +854,15 @@ def api_score(x: StockRequest):
     if ltp is None:
         raise HTTPException(status_code=502, detail="Unable to retrieve live LTP from Kotak Neo.")
 
-    # --- Updated Yahoo Finance Fetch Block ---
+    # --- Updated Resilient Yahoo Finance Block ---
     try:
         t, info, hist = fetch_yfinance_with_retry(symbol)
     except Exception as e:
         raise HTTPException(
             status_code=502,
-            detail=f"Yahoo Finance data fetch error: Too Many Requests. Rate limited. Detail: {str(e)}"
+            detail=f"Yahoo Finance blocked the request even after retries. Detail: {str(e)}"
         )
-    # -----------------------------------------
+    # ---------------------------------------------
 
     f_res = analyze_fundamentals(info, t)
     t_res = analyze_technicals(hist)
