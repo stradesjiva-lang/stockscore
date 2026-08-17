@@ -16,7 +16,7 @@ button,input,select{font:inherit}.app{min-height:100vh;display:flex}.sidebar{wid
 .accountbox{border:1px solid #e5eaf2;border-radius:10px;padding:12px;background:#fbfcfe}
 .accountbox .label{font-size:12px;color:#667085}.accountbox .value{font-size:20px;font-weight:900;margin-top:4px}
 @media(max-width:900px){.accountgrid{grid-template-columns:repeat(2,1fr)}}
-</style>
+.tvwrap{height:220px;position:relative;background:linear-gradient(180deg,#fff,#fbfffd);border:1px solid #eef1f4;border-radius:7px;overflow:hidden}.tvwrap canvas{display:block;width:100%;height:100%}.chartempty{position:absolute;inset:0;display:grid;place-items:center;color:#64748b;font-size:12px;pointer-events:none}.chartnote{font-size:9px;color:#64748b;margin-top:6px}</style>
 </head>
 <body>
 <div class="app">
@@ -70,7 +70,7 @@ button,input,select{font:inherit}.app{min-height:100vh;display:flex}.sidebar{wid
 
 <div class="below">
     <div class="card breakcard"><div class="sectiontitle">Detailed Score Breakdown ⓘ</div><div class="breakgrid" id="breakdown"><div class="meta">Analyze a stock to load score details.</div></div></div>
-    <div class="card chartcard"><div class="sectiontitle">Price Chart <span class="livepill" style="float:right"><span class="live-dot"></span>LIVE</span></div><div class="periods"><button>1M</button><button>3M</button><button>6M</button><button class="active">1Y</button><button>3Y</button><button>5Y</button></div><div class="tvwrap" id="tvChart"><div style="height:100%;display:grid;place-items:center;color:#64748b;font-size:12px">Loading live TradingView chart…</div></div><div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b"><span>1M</span><span>3M</span><span>6M</span><span>1Y</span><span>52W High</span><span>52W Low</span></div></div>
+    <div class="card chartcard"><div class="sectiontitle">Price Chart <span class="livepill" style="float:right"><span class="live-dot"></span>LIVE</span></div><div class="periods"><button onclick="setChartWindow(30,this)">1M</button><button onclick="setChartWindow(60,this)">3M</button><button onclick="setChartWindow(120,this)">6M</button><button class="active" onclick="setChartWindow(240,this)">1Y</button><button onclick="setChartWindow(360,this)">3Y</button><button onclick="setChartWindow(600,this)">5Y</button></div><div class="tvwrap" id="tvChart"><canvas id="liveCanvas"></canvas><div id="chartEmpty" class="chartempty">Waiting for live ticks…</div></div><div class="chartnote">Live session chart • Kotak Neo ticks when logged in; scanner fallback otherwise</div><div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b"><span>1M</span><span>3M</span><span>6M</span><span>1Y</span><span>52W High</span><span>52W Low</span></div></div>
   </div>
 
   <div class="below" style="grid-template-columns:1fr 1fr;margin-top:14px">
@@ -201,11 +201,11 @@ async function analyze(symbol){
     $('score').innerHTML=`${d.score}<small>/100</small>`;$('decision').textContent=d.decision||'HOLD';
     const fv=d.fair_value_analysis||{};$('fair').textContent=fv.fair_value!=null?'₹'+fmt(fv.fair_value):'₹—';$('upside').textContent=fv.upside_pct!=null?pct(fv.upside_pct):'—';$('zone').textContent=fv.buy_zone||'—';$('mos').textContent=fv.margin_of_safety_pct!=null?pct(fv.margin_of_safety_pct):'—';$('conf').textContent=d.data_confidence_pct!=null?`${d.data_confidence_pct}%`:'—';$('confline').style.width=`${Math.min(100,Number(d.data_confidence_pct)||0)}%`;
     const b=d.breakdown||{};setScore('fscore',b.fundamental?.score,40,'fp');setScore('tscore',b.technical?.score,25,'tp');setScore('vscore',b.valuation?.score,20,'vp');setScore('rscore',b.risk?.score,15,'rp');renderBreak(b);
-    $('sumDecision').textContent=d.decision||'—';$('sumConf').textContent=d.data_confidence_pct!=null?`${d.data_confidence_pct}%`:'—';updateWatchButton();renderWatch();renderTradingView(current);
+    $('sumDecision').textContent=d.decision||'—';$('sumConf').textContent=d.data_confidence_pct!=null?`${d.data_confidence_pct}%`:'—';updateWatchButton();renderWatch();resetLiveChart();connectLiveStream(current);
     liveStatus(`${d.live_ltp_source||'TradingView'} · ${d.market_data_source||'Market data'}`,true);
     try{await api('/api/history',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:current,score:d.score,decision:d.decision,ltp:d.ltp})})}catch{}
   }catch(e){
-    $('company').textContent=`${symbol} — data unavailable`;$('symbol').textContent=symbol;$('change').textContent='';liveStatus(e.message,false);renderTradingView(symbol);
+    $('company').textContent=`${symbol} — data unavailable`;$('symbol').textContent=symbol;$('change').textContent='';liveStatus(e.message,false);resetLiveChart();startPricePolling();
   }
 }
 
@@ -217,15 +217,17 @@ async function loadNews(q='Indian stock market',full=false){
   }catch(e){const msg=`<div class="meta">News temporarily unavailable. <button onclick="loadNews('${esc(q)}')" style="border:0;background:none;color:#1554d6;cursor:pointer">Retry</button></div>`;if($('newsMini'))$('newsMini').innerHTML=msg;if($('newsFull'))$('newsFull').innerHTML=msg}
 }
 
-function tvSymbol(sym){const s=String(sym||'TCS').toUpperCase().replace(/[^A-Z0-9_]/g,'');return s==='SENSEX'?'BSE:SENSEX':'NSE:'+s}
-function renderTradingView(sym){
-  const box=$('tvChart');if(!box)return;box.innerHTML='<div class="tradingview-widget-container" style="height:100%;width:100%"><div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div></div>';
-  const script=document.createElement('script');script.src='https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';script.async=true;script.text=JSON.stringify({autosize:true,symbol:tvSymbol(sym),interval:'5',timezone:'Asia/Kolkata',theme:'light',style:'1',locale:'en',allow_symbol_change:true,withdateranges:true,hide_top_toolbar:false,hide_legend:false,save_image:false,support_host:'https://www.tradingview.com'});box.querySelector('.tradingview-widget-container').appendChild(script);
-}
-function connectLiveStream(sym){
-  if(!sessionId){liveStatus('Public TradingView data · login for Kotak Neo live feed',false);return}
-  try{if(liveWs)liveWs.close();const proto=location.protocol==='https:'?'wss':'ws';liveWs=new WebSocket(`${proto}://${location.host}/ws/live?session=${encodeURIComponent(sessionId)}&symbol=${encodeURIComponent(sym)}`);liveWs.onopen=()=>liveStatus('LIVE · Kotak Neo WebSocket',true);liveWs.onmessage=e=>{try{const d=JSON.parse(e.data);if(d.type==='tick'&&d.ltp!=null&&String(d.symbol||'').replace(/-EQ$/,'').toUpperCase()===current){$('price').textContent='₹'+fmt(d.ltp);$('change').textContent='● LIVE · '+(d.change_pct!=null?pct(d.change_pct):'');}}catch{}};liveWs.onerror=()=>liveStatus('WebSocket unavailable · using scanner data',false);liveWs.onclose=()=>{if(sessionId)setTimeout(()=>connectLiveStream(current),3000)}}catch{liveStatus('Live stream unavailable',false)}
-}
+let liveSeries=[]; let chartWindow=120; let pricePollTimer=null; let newsQuery='Indian stock market';
+function loadNewsCategory(q,btn){newsQuery=q;document.querySelectorAll('.filters button').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');loadNews(q,false)}
+function tvSymbol(sym){return String(sym||'TCS').toUpperCase()}
+function resetLiveChart(){liveSeries=[];drawLiveChart()}
+function pushLivePoint(price){const p=Number(price);if(!Number.isFinite(p))return;liveSeries.push({t:Date.now(),p});if(liveSeries.length>600)liveSeries.shift();drawLiveChart()}
+function drawLiveChart(){const c=$('liveCanvas'), empty=$('chartEmpty');if(!c)return;const box=c.parentElement;const w=box.clientWidth||600,h=box.clientHeight||220;const dpr=window.devicePixelRatio||1;c.width=w*dpr;c.height=h*dpr;c.style.width=w+'px';c.style.height=h+'px';const ctx=c.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);const pts=liveSeries.slice(-chartWindow);if(!pts.length){if(empty)empty.style.display='grid';return}else if(empty)empty.style.display='none';const vals=pts.map(x=>x.p), min=Math.min(...vals),max=Math.max(...vals),span=(max-min)||Math.max(1,Math.abs(max)*0.002);const pad=22;ctx.strokeStyle='#e7edf3';ctx.lineWidth=1;for(let i=1;i<4;i++){const y=pad+(h-pad*2)*i/4;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}ctx.beginPath();pts.forEach((x,i)=>{const xx=pad+(w-pad*2)*(i/Math.max(1,pts.length-1));const yy=h-pad-((x.p-min)/span)*(h-pad*2);i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy)});ctx.strokeStyle='#10b981';ctx.lineWidth=2;ctx.stroke();const last=pts[pts.length-1];const ly=h-pad-((last.p-min)/span)*(h-pad*2);ctx.fillStyle='#10b981';ctx.beginPath();ctx.arc(w-pad,ly,4,0,Math.PI*2);ctx.fill();ctx.fillStyle='#475569';ctx.font='10px system-ui';ctx.fillText('₹'+fmt(max),8,12);ctx.fillText('₹'+fmt(min),8,h-6)}
+window.addEventListener('resize',drawLiveChart);
+function setChartWindow(n,btn){chartWindow=n;document.querySelectorAll('.periods button').forEach(x=>x.classList.remove('active'));if(btn)btn.classList.add('active');drawLiveChart()}
+async function pollLivePrice(){if(!current)return;try{const d=await api('/api/live-price?symbol='+encodeURIComponent(current));if(d.ltp!=null){$('price').textContent='₹'+fmt(d.ltp);$('change').textContent=(d.change_pct!=null?pct(d.change_pct):'')+' · '+esc(d.source||'Live');pushLivePoint(d.ltp)}}catch(e){}}
+function startPricePolling(){clearInterval(pricePollTimer);pollLivePrice();pricePollTimer=setInterval(pollLivePrice,10000)}
+function connectLiveStream(sym){if(liveWs){try{liveWs.close()}catch{}};if(!sessionId){liveStatus('Public scanner live snapshot · login for Kotak Neo WebSocket',false);startPricePolling();return}try{const proto=location.protocol==='https:'?'wss':'ws';liveWs=new WebSocket(`${proto}://${location.host}/ws/live?session=${encodeURIComponent(sessionId)}&symbol=${encodeURIComponent(sym)}`);liveWs.onopen=()=>liveStatus('LIVE · Kotak Neo WebSocket',true);liveWs.onmessage=e=>{try{const d=JSON.parse(e.data);if(d.type==='tick'&&d.ltp!=null){$('price').textContent='₹'+fmt(d.ltp);$('change').textContent=(d.change_pct!=null?pct(d.change_pct):'')+' · LIVE';pushLivePoint(d.ltp)}}catch{}};liveWs.onerror=()=>liveStatus('WebSocket unavailable · fallback polling active',false);liveWs.onclose=()=>{if(sessionId&&current)setTimeout(()=>connectLiveStream(current),3000)};startPricePolling()}catch{liveStatus('Live stream unavailable · fallback polling active',false);startPricePolling()}}
 async function loadMarketOverview(){try{const d=await api('/api/market-overview');$('marketTape').innerHTML=(d.items||[]).map(x=>`<span><b>${esc(x.symbol)}</b> ₹${fmt(x.price)} <b style="color:${Number(x.change_pct)>=0?'#24d47e':'#ff7373'}">${Number(x.change_pct)>=0?'+':''}${fmt(x.change_pct)}%</b></span>`).join('')||'<span>Market data unavailable</span>'}catch{$('marketTape').innerHTML='<span>Market overview temporarily unavailable</span>'}}
 
 async function compareStocks(){const symbols=$('cmpInput').value.split(',').map(x=>x.trim()).filter(Boolean);$('cmpResult').innerHTML='Loading…';try{const d=await api('/api/compare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbols})});$('cmpResult').innerHTML=`<table class="table"><tr><th>Stock</th><th>Price</th><th>Score</th><th>Decision</th></tr>${(d.results||[]).map(x=>`<tr onclick="analyze('${esc(x.symbol)}')" style="cursor:pointer"><td>${esc(x.symbol)}</td><td>₹${fmt(x.ltp)}</td><td>${x.score}/100</td><td>${esc(x.decision)}</td></tr>`).join('')}</table>`}catch(e){$('cmpResult').innerHTML='<div class="meta">❌ '+esc(e.message)+'</div>'}}
@@ -262,6 +264,6 @@ async function loadNeoAccount(){
   }
 }
 
-renderWatch();loadNews();loadMarketOverview();renderTradingView('TCS');analyze('TCS');setInterval(loadNews,120000);setInterval(loadMarketOverview,10000);
+renderWatch();loadNews();loadMarketOverview();resetLiveChart();analyze('TCS');setInterval(()=>loadNews(newsQuery),120000);setInterval(loadMarketOverview,10000);setInterval(pollLivePrice,10000);
 </script>
 </body></html>
