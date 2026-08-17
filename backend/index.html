@@ -164,7 +164,7 @@ function page(id,btn){
   const target=$(id);if(target)target.classList.add('active');
   document.querySelectorAll('.nav button,.toplinks button[data-page]').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll(`[data-page="${id}"]`).forEach(x=>x.classList.add('active'));
-  // Intentionally do not change window scroll position.
+  // Never change window scroll position from navigation.
   if(id==='news')loadNews('Indian stock market',true);
   if(id==='pulse')loadMarketPulse();
   if(id==='alerts')loadAlerts();
@@ -263,20 +263,13 @@ async function loadNews(q='Indian stock market',full=false){
 let pricePollTimer=null; let newsQuery='Indian stock market'; let tvRange='1Y';
 function loadNewsCategory(q,btn){newsQuery=q;document.querySelectorAll('.filters button').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');loadNews(q,false)}
 function tvSymbol(sym){return `NSE:${String(sym||'TCS').toUpperCase().replace(/[^A-Z0-9_]/g,'')}`}
-function renderTradingViewChart(sym= current, range=tvRange){
-  const host=$('tvWidget'); if(!host)return;
-
-  // TradingView's embedded script can sometimes move browser focus/scroll
-  // while it is being recreated. Preserve the user's exact page position.
-  const savedX=window.scrollX;
-  const savedY=window.scrollY;
+function renderTradingViewChart(sym=current, range=tvRange){
+  const host=$('tvWidget');
+  if(!host)return;
   const symbol=tvSymbol(sym);
   const tvUrl=`https://www.tradingview.com/symbols/NSE-${encodeURIComponent(String(sym||'TCS').toUpperCase())}/`;
-
-  const tvLink=$('tvOpenLink');
-  if(tvLink) tvLink.href=tvUrl;
-  const tvLink2=$('tvOpenLink2');
-  if(tvLink2) tvLink2.href=tvUrl;
+  const tvLink=$('tvOpenLink'); if(tvLink) tvLink.href=tvUrl;
+  const tvLink2=$('tvOpenLink2'); if(tvLink2) tvLink2.href=tvUrl;
 
   host.innerHTML='';
   const script=document.createElement('script');
@@ -301,17 +294,6 @@ function renderTradingViewChart(sym= current, range=tvRange){
     range
   });
   host.appendChild(script);
-
-  // Restore position after TradingView has had a chance to initialize.
-  const restore=()=>{
-    window.scrollTo(savedX,savedY);
-  };
-  restore();
-  requestAnimationFrame(restore);
-  setTimeout(restore,50);
-  setTimeout(restore,200);
-  setTimeout(restore,700);
-  setTimeout(restore,1500);
 }
 function resetLiveChart(){renderTradingViewChart(current,tvRange)}
 // Keep page scrolling stable when the pointer is over the embedded chart.
@@ -321,7 +303,27 @@ function protectChartWheel(){const w=$('tvChart');if(!w)return;w.style.overscrol
 function setTVRange(range,btn){tvRange=range;document.querySelectorAll('.periods button').forEach(x=>x.classList.remove('active'));if(btn)btn.classList.add('active');renderTradingViewChart(current,tvRange)}
 function startPricePolling(){clearInterval(pricePollTimer);pollLivePrice();pricePollTimer=setInterval(pollLivePrice,10000)}
 async function pollLivePrice(){if(!current)return;try{const d=await api('/api/live-price?symbol='+encodeURIComponent(current));if(d.ltp!=null){$('price').textContent='₹'+fmt(d.ltp);$('change').textContent=(d.change_pct!=null?pct(d.change_pct):'')+' · '+esc(d.source||'Live')}}catch(e){}}
-function connectLiveStream(sym){if(liveWs){try{liveWs.close()}catch{}};renderTradingViewChart(sym,tvRange);if(!sessionId){liveStatus('TradingView chart · public scanner live snapshot · login for Kotak Neo live feed',false);startPricePolling();return}try{const proto=location.protocol==='https:'?'wss':'ws';liveWs=new WebSocket(`${proto}://${location.host}/ws/live?session=${encodeURIComponent(sessionId)}&symbol=${encodeURIComponent(sym)}`);liveWs.onopen=()=>liveStatus('LIVE · Kotak Neo WebSocket + TradingView chart',true);liveWs.onmessage=e=>{try{const d=JSON.parse(e.data);if(d.type==='tick'&&d.ltp!=null){$('price').textContent='₹'+fmt(d.ltp);$('change').textContent=(d.change_pct!=null?pct(d.change_pct):'')+' · LIVE'}}catch{}};liveWs.onerror=()=>liveStatus('TradingView chart available · WebSocket unavailable · fallback polling active',false);liveWs.onclose=()=>{if(sessionId&&current)setTimeout(()=>connectLiveStream(current),3000)};startPricePolling()}catch{liveStatus('TradingView chart available · live stream unavailable',false);startPricePolling()}}
+function reconnectLiveOnly(sym){
+  if(!sessionId||!current)return;
+  try{
+    const proto=location.protocol==='https:'?'wss':'ws';
+    const ws=new WebSocket(`${proto}://${location.host}/ws/live?session=${encodeURIComponent(sessionId)}&symbol=${encodeURIComponent(sym)}`);
+    liveWs=ws;
+    ws.onopen=()=>liveStatus('LIVE · Kotak Neo WebSocket + TradingView chart',true);
+    ws.onmessage=(e)=>{
+      try{
+        const d=JSON.parse(e.data);
+        if(d.ltp!=null){
+          $('price').textContent='₹'+fmt(d.ltp);
+          $('change').textContent=(d.change_pct!=null?pct(d.change_pct):'')+' · LIVE';
+        }
+      }catch{}
+    };
+    ws.onerror=()=>liveStatus('TradingView chart available · WebSocket unavailable · fallback polling active',false);
+    ws.onclose=()=>{if(sessionId&&current){clearTimeout(window._tvReconnect);window._tvReconnect=setTimeout(()=>reconnectLiveOnly(current),3000)}};
+  }catch{}
+}
+function connectLiveStream(sym){if(liveWs){try{liveWs.close()}catch{}};renderTradingViewChart(sym,tvRange);if(!sessionId){liveStatus('TradingView chart · public scanner live snapshot · login for Kotak Neo live feed',false);startPricePolling();return}try{const proto=location.protocol==='https:'?'wss':'ws';liveWs=new WebSocket(`${proto}://${location.host}/ws/live?session=${encodeURIComponent(sessionId)}&symbol=${encodeURIComponent(sym)}`);liveWs.onopen=()=>liveStatus('LIVE · Kotak Neo WebSocket + TradingView chart',true);liveWs.onmessage=e=>{try{const d=JSON.parse(e.data);if(d.type==='tick'&&d.ltp!=null){$('price').textContent='₹'+fmt(d.ltp);$('change').textContent=(d.change_pct!=null?pct(d.change_pct):'')+' · LIVE'}}catch{}};liveWs.onerror=()=>liveStatus('TradingView chart available · WebSocket unavailable · fallback polling active',false);liveWs.onclose=()=>{if(sessionId&&current){clearTimeout(window._tvReconnect);window._tvReconnect=setTimeout(()=>reconnectLiveOnly(current),3000)}};startPricePolling()}catch{liveStatus('TradingView chart available · live stream unavailable',false);startPricePolling()}}
 async function loadMarketOverview(){try{const d=await api('/api/market-overview');$('marketTape').innerHTML=(d.items||[]).map(x=>`<span><b>${esc(x.symbol)}</b> ₹${fmt(x.price)} <b style="color:${Number(x.change_pct)>=0?'#24d47e':'#ff7373'}">${Number(x.change_pct)>=0?'+':''}${fmt(x.change_pct)}%</b></span>`).join('')||'<span>Market data unavailable</span>'}catch{$('marketTape').innerHTML='<span>Market overview temporarily unavailable</span>'}}
 
 async function compareStocks(){const symbols=$('cmpInput').value.split(',').map(x=>x.trim()).filter(Boolean);$('cmpResult').innerHTML='Loading…';try{const d=await api('/api/compare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbols})});$('cmpResult').innerHTML=`<table class="table"><tr><th>Stock</th><th>Price</th><th>Score</th><th>Decision</th></tr>${(d.results||[]).map(x=>`<tr onclick="analyze('${esc(x.symbol)}')" style="cursor:pointer"><td>${esc(x.symbol)}</td><td>₹${fmt(x.ltp)}</td><td>${x.score}/100</td><td>${esc(x.decision)}</td></tr>`).join('')}</table>`}catch(e){$('cmpResult').innerHTML='<div class="meta">❌ '+esc(e.message)+'</div>'}}
