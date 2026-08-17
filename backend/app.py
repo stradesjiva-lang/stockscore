@@ -89,6 +89,11 @@ class AlertRequest(BaseModel):
     max_score: Optional[float] = None
     below_price: Optional[float] = None
     above_price: Optional[float] = None
+    min_rsi: Optional[float] = None
+    max_rsi: Optional[float] = None
+    min_change_pct: Optional[float] = None
+    max_change_pct: Optional[float] = None
+    volume_spike_pct: Optional[float] = None
 
 class HistoryRequest(BaseModel):
     symbol: str
@@ -161,6 +166,105 @@ def fetch_tradingview_data(symbol):
     row = data["data"][0]["d"]
     cols = payload["columns"]
     return dict(zip(cols, row))
+
+
+# =========================================================
+# MARKET PULSE DATA (NSE + TRADINGVIEW)
+# =========================================================
+_nse_session = requests.Session()
+_nse_session.headers.update({
+    "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/151 Safari/537.36",
+    "Accept":"application/json,text/plain,*/*","Accept-Language":"en-US,en;q=0.9",
+    "Referer":"https://www.nseindia.com/"
+})
+_pulse_cache: Dict[str, Dict[str, Any]] = {}
+_pulse_cache_ttl = 20
+
+def _cached(key):
+    item=_pulse_cache.get(key)
+    return item["data"] if item and time.time()-item["time"]<_pulse_cache_ttl else None
+
+def _put_cache(key,data):
+    _pulse_cache[key]={"time":time.time(),"data":data}; return data
+
+def nse_json(path, params=None):
+    base="https://www.nseindia.com"
+    _nse_session.get(base,timeout=6)
+    r=_nse_session.get(base+path,params=params,timeout=8); r.raise_for_status(); return r.json()
+
+def _nse_variation(kind,limit=10):
+    candidates=[{"index":kind,"type":"FOSec","limit":limit},{"index":kind,"type":"AllSec","limit":limit}]
+    if kind=="losers": candidates=[{"index":"loosers","type":"FOSec","limit":limit},{"index":"losers","type":"FOSec","limit":limit},{"index":"loosers","type":"AllSec","limit":limit}]
+    last=None
+    for params in candidates:
+        try:
+            raw=nse_json("/api/live-analysis-variations",params=params); rows=raw.get("data",[]) if isinstance(raw,dict) else []
+            if rows:
+                out=[]
+                for row in rows[:limit]:
+                    out.append({"symbol":str(row.get("symbol") or row.get("symbolName") or row.get("identifier") or "").replace("-EQ","").upper(),"price":num(row.get("ltp") or row.get("lastPrice") or row.get("closePrice")),"change_pct":num(row.get("perChange") or row.get("pChange") or row.get("percentChange")),"change_abs":num(row.get("netPrice") or row.get("change")),"volume":num(row.get("trdVol") or row.get("volume")),"source":"NSE"})
+                return out
+        except Exception as e: last=e
+    raise RuntimeError(str(last) if last else "NSE variation data unavailable")
+
+def _tv_scan_tickers(tickers,columns,sort_by=None,sort_order="desc",limit=20):
+    payload={"symbols":{"tickers":tickers,"query":{"types":[]}},"columns":columns,"range":[0,limit]}
+    if sort_by: payload["sort"]={"sortBy":sort_by,"sortOrder":sort_order}
+    r=requests.post("https://scanner.tradingview.com/india/scan",json=payload,headers={"User-Agent":"Mozilla/5.0","Content-Type":"application/json"},timeout=10)
+    r.raise_for_status(); return [dict(zip(columns,row.get("d",[]))) for row in r.json().get("data",[])]
+
+def _nifty50_fallback_pulse():
+    symbols="RELIANCE HDFCBANK ICICIBANK BHARTIARTL TCS INFY ITC SBIN LT AXISBANK KOTAKBANK M&M HINDUNILVR BAJFINANCE MARUTI SUNPHARMA HCLTECH TITAN ULTRACEMCO ADANIENT NTPC ONGC POWERGRID TATASTEEL TATAMOTORS WIPRO TECHM ASIANPAINT NESTLEIND JSWSTEEL COALINDIA BAJAJFINSV ADANIPORTS HINDALCO GRASIM CIPLA EICHERMOT DRREDDY DIVISLAB APOLLOHOSP TATACONSUM BPCL HEROMOTOCO BRITANNIA SHRIRAMFIN TRENT BEL INDUSINDBK SBILIFE HDFCLIFE".split()
+    cols=["name","description","close","change","change_abs","volume"]
+    rows=_tv_scan_tickers([f"NSE:{x}" for x in symbols],cols,"change","desc",50); out=[]
+    for x in rows:
+        sym=str(x.get("name") or x.get("description") or "").upper().replace("NSE:","")
+        out.append({"symbol":sym,"price":num(x.get("close")),"change_pct":num(x.get("change")),"change_abs":num(x.get("change_abs")),"volume":num(x.get("volume")),"source":"TradingView"})
+    return out
+
+def get_top_movers(limit=10):
+    key=f"movers:{limit}"; cached=_cached(key)
+    if cached is not None:return cached
+    try: g=_nse_variation("gainers",limit); l=_nse_variation("losers",limit); src="NSE"
+    except Exception:
+        rows=_nifty50_fallback_pulse(); g=sorted(rows,key=lambda x:x.get("change_pct") if x.get("change_pct") is not None else -999,reverse=True)[:limit]; l=sorted(rows,key=lambda x:x.get("change_pct") if x.get("change_pct") is not None else 999)[:limit]; src="TradingView NIFTY 50 fallback"
+    return _put_cache(key,{"gainers":g,"losers":l,"source":src,"updated_at":datetime.now(timezone.utc).isoformat()})
+
+SECTOR_TICKERS={"NIFTY Auto":"NSE:CNXAUTO","NIFTY Bank":"NSE:BANKNIFTY","NIFTY IT":"NSE:CNXIT","NIFTY Pharma":"NSE:CNXPHARMA","NIFTY Metal":"NSE:CNXMETAL","NIFTY FMCG":"NSE:CNXFMCG","NIFTY Realty":"NSE:CNXREALTY","NIFTY Media":"NSE:CNXMEDIA","NIFTY PSU Bank":"NSE:CNXPSUBANK","NIFTY Private Bank":"NSE:NIFTYPVTBANK","NIFTY Financial Services":"NSE:NIFTYFINSERVICE","NIFTY Energy":"NSE:NIFTYENERGY","NIFTY Healthcare":"NSE:NIFTYHEALTHCARE","NIFTY Consumer Durables":"NSE:NIFTYCONSUMERDURABLES","NIFTY Oil & Gas":"NSE:NIFTYOILANDGAS"}
+
+def get_sector_performance():
+    key="sectors"; cached=_cached(key)
+    if cached is not None:return cached
+    cols=["name","description","close","change","change_abs","volume"]
+    try:
+        rows=_tv_scan_tickers(list(SECTOR_TICKERS.values()),cols,"change","desc",len(SECTOR_TICKERS)); items=[]
+        for label,ticker in SECTOR_TICKERS.items():
+            suffix=ticker.split(":")[-1].upper(); r=next((v for v in rows if suffix in str(v.get("name") or v.get("description") or "").upper()),None)
+            if r: items.append({"sector":label,"symbol":ticker,"price":num(r.get("close")),"change_pct":num(r.get("change")),"change_abs":num(r.get("change_abs")),"volume":num(r.get("volume")),"source":"TradingView"})
+        items.sort(key=lambda x:x.get("change_pct") if x.get("change_pct") is not None else -999,reverse=True)
+        return _put_cache(key,{"items":items,"source":"TradingView sector indices","updated_at":datetime.now(timezone.utc).isoformat()})
+    except Exception as e:return _put_cache(key,{"items":[],"source":"unavailable","error":str(e),"updated_at":datetime.now(timezone.utc).isoformat()})
+
+def get_market_breadth():
+    key="breadth"; cached=_cached(key)
+    if cached is not None:return cached
+    try:
+        raw=nse_json("/api/equity-stockIndices",params={"index":"NIFTY 50"}); rows=raw.get("data",[]) if isinstance(raw,dict) else []
+        adv=sum(1 for x in rows if num(x.get("pChange")) is not None and num(x.get("pChange"))>0); dec=sum(1 for x in rows if num(x.get("pChange")) is not None and num(x.get("pChange"))<0); unch=sum(1 for x in rows if num(x.get("pChange"))==0); total=adv+dec+unch
+        return _put_cache(key,{"advances":adv,"declines":dec,"unchanged":unch,"total":total,"ad_ratio":round(adv/dec,2) if dec else None,"scope":"NIFTY 50","source":"NSE","updated_at":datetime.now(timezone.utc).isoformat()})
+    except Exception as e:return _put_cache(key,{"advances":None,"declines":None,"unchanged":None,"total":None,"ad_ratio":None,"scope":"NIFTY 50","source":"unavailable","error":str(e),"updated_at":datetime.now(timezone.utc).isoformat()})
+
+def get_fii_dii():
+    key="fii_dii"; cached=_cached(key)
+    if cached is not None:return cached
+    try:
+        raw=nse_json("/api/fiidiiTradeReact"); rows=raw if isinstance(raw,list) else raw.get("data",[]) if isinstance(raw,dict) else []; items=[]
+        for row in rows:
+            cat=str(row.get("category") or row.get("categoryName") or "").upper()
+            buy=num(row.get("buyValue") or row.get("buyValueInCr") or row.get("buy")); sell=num(row.get("sellValue") or row.get("sellValueInCr") or row.get("sell")); net=num(row.get("netValue") or row.get("netValueInCr") or row.get("net"))
+            if cat and (buy is not None or sell is not None or net is not None): items.append({"category":cat,"buy":buy,"sell":sell,"net":net,"date":row.get("date") or row.get("tradeDate")})
+        return _put_cache(key,{"items":items,"source":"NSE","updated_at":datetime.now(timezone.utc).isoformat()})
+    except Exception as e:return _put_cache(key,{"items":[],"source":"unavailable","error":str(e),"updated_at":datetime.now(timezone.utc).isoformat()})
 
 # =========================================================
 # KOTAK NEO LOGIN
@@ -875,7 +979,7 @@ def health():
     return {
         "ok": True,
         "service": "StockMeter",
-        "version": "4.1-live-fixed",
+        "version": "5.0-market-pulse",
         "active_sessions": len(sessions)
     }
 
@@ -960,6 +1064,24 @@ def api_market_overview(request: Request):
         return {"items":out,"source":"TradingView scanner","updated_at":datetime.now(timezone.utc).isoformat()}
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Market overview failed: {str(e)}")
+
+@app.get("/api/market-pulse")
+def api_market_pulse(limit: int = 10):
+    limit=max(5,min(int(limit),25))
+    return {"movers":get_top_movers(limit),"sectors":get_sector_performance(),"breadth":get_market_breadth(),"fii_dii":get_fii_dii(),"updated_at":datetime.now(timezone.utc).isoformat()}
+
+@app.get("/api/movers")
+def api_movers(limit: int = 10): return get_top_movers(max(5,min(int(limit),25)))
+
+@app.get("/api/sectors")
+def api_sectors(): return get_sector_performance()
+
+@app.get("/api/breadth")
+def api_breadth(): return get_market_breadth()
+
+@app.get("/api/fii-dii")
+def api_fii_dii(): return get_fii_dii()
+
 
 @app.get("/api/news")
 def api_news(q: str = "Indian stock market", limit: int = 8):
@@ -1353,7 +1475,13 @@ def api_alert_create(x: AlertRequest, request: Request):
         "max_score": x.max_score,
         "below_price": x.below_price,
         "above_price": x.above_price,
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "min_rsi": x.min_rsi,
+        "max_rsi": x.max_rsi,
+        "min_change_pct": x.min_change_pct,
+        "max_change_pct": x.max_change_pct,
+        "volume_spike_pct": x.volume_spike_pct,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "last_triggered_at": None
     }
     return {"ok": True, "id": alert_id, "alert": alerts_store[alert_id]}
 
@@ -1370,34 +1498,35 @@ def api_alert_delete(alert_id: str, request: Request):
 
 @app.post("/api/alerts/check")
 def api_alert_check(x: AlertRequest, request: Request):
-    session_id = request.headers.get("X-StockMeter-Session", "").strip()
-    neo = None
+    session_id=request.headers.get("X-StockMeter-Session","").strip()
+    neo=None
     if session_id:
-        try: neo = get_session(request)["neo"]
-        except HTTPException: neo = None
-    result = analyze_symbol(x.symbol, neo)
+        try: neo=get_session(request)["neo"]
+        except HTTPException: neo=None
+    result=analyze_symbol(x.symbol,neo)
+    triggered=False; reasons=[]
+    if x.min_score is not None and result["score"]>=x.min_score: triggered=True; reasons.append(f"score >= {x.min_score}")
+    if x.max_score is not None and result["score"]<=x.max_score: triggered=True; reasons.append(f"score <= {x.max_score}")
+    if x.below_price is not None and result["ltp"]<=x.below_price: triggered=True; reasons.append(f"price <= ₹{x.below_price}")
+    if x.above_price is not None and result["ltp"]>=x.above_price: triggered=True; reasons.append(f"price >= ₹{x.above_price}")
+    raw=result.get("technical",{}).get("data",{}) if isinstance(result.get("technical"),dict) else {}
+    rsi=num(raw.get("rsi") or raw.get("RSI")); change_pct=num(result.get("price_change_pct")); volume=num(result.get("volume")); avg_volume=num(raw.get("average_volume_30d_calc") or raw.get("average_volume_60d_calc") or raw.get("volume_sma")); volume_spike=(volume/avg_volume*100-100) if volume is not None and avg_volume and avg_volume>0 else None
+    if x.min_rsi is not None and rsi is not None and rsi>=x.min_rsi: triggered=True; reasons.append(f"RSI >= {x.min_rsi}")
+    if x.max_rsi is not None and rsi is not None and rsi<=x.max_rsi: triggered=True; reasons.append(f"RSI <= {x.max_rsi}")
+    if x.min_change_pct is not None and change_pct is not None and change_pct>=x.min_change_pct: triggered=True; reasons.append(f"change % >= {x.min_change_pct}")
+    if x.max_change_pct is not None and change_pct is not None and change_pct<=x.max_change_pct: triggered=True; reasons.append(f"change % <= {x.max_change_pct}")
+    if x.volume_spike_pct is not None and volume_spike is not None and volume_spike>=x.volume_spike_pct: triggered=True; reasons.append(f"volume spike >= {x.volume_spike_pct}%")
+    return {"triggered":triggered,"reasons":reasons,"symbol":result["symbol"],"score":result["score"],"decision":result["decision"],"ltp":result["ltp"],"rsi":rsi,"change_pct":change_pct,"volume_spike_pct":round(volume_spike,2) if volume_spike is not None else None}
 
-    triggered = False
-    reasons = []
-
-    if x.min_score is not None and result["score"] >= x.min_score:
-        triggered = True
-        reasons.append(f"score >= {x.min_score}")
-    if x.max_score is not None and result["score"] <= x.max_score:
-        triggered = True
-        reasons.append(f"score <= {x.max_score}")
-    if x.below_price is not None and result["ltp"] <= x.below_price:
-        triggered = True
-        reasons.append(f"price <= ₹{x.below_price}")
-    if x.above_price is not None and result["ltp"] >= x.above_price:
-        triggered = True
-        reasons.append(f"price >= ₹{x.above_price}")
-
-    return {
-        "triggered": triggered,
-        "reasons": reasons,
-        "symbol": result["symbol"],
-        "score": result["score"],
-        "decision": result["decision"],
-        "ltp": result["ltp"]
-    }
+@app.post("/api/alerts/evaluate")
+def api_alerts_evaluate(request: Request):
+    session_id=request.headers.get("X-StockMeter-Session","").strip(); get_session(request); results=[]
+    for alert_id,alert in list(alerts_store.items()):
+        if alert.get("session_id")!=session_id: continue
+        try:
+            payload=AlertRequest(**{k:v for k,v in alert.items() if k in AlertRequest.model_fields})
+            check=api_alert_check(payload,request)
+            if check.get("triggered"): alert["last_triggered_at"]=datetime.now(timezone.utc).isoformat()
+            results.append({"id":alert_id,"alert":alert,"result":check})
+        except Exception as e: results.append({"id":alert_id,"alert":alert,"error":str(e)})
+    return {"items":results,"updated_at":datetime.now(timezone.utc).isoformat()}
