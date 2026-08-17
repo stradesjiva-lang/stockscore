@@ -5,6 +5,7 @@ import time
 import asyncio
 from pathlib import Path
 import json
+import re
 import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -47,6 +48,8 @@ app.add_middleware(
 sessions: Dict[str, Dict[str, Any]] = {}
 score_history: List[Dict[str, Any]] = []
 alerts_store: Dict[str, Dict[str, Any]] = {}
+news_cache: Dict[str, Dict[str, Any]] = {}
+news_cache_ttl = 90
 
 # =========================================================
 # REQUEST MODELS
@@ -222,7 +225,11 @@ def login_neo(totp):
         def _neo_on_message(message):
             tick = extract_live_tick(message)
             if tick and tick.get("token") is not None and tick.get("ltp") is not None:
-                sessions.get(session_id, {}).get("ticks", {})[clean_token(tick["token"])] = tick
+                sess = sessions.get(session_id, {})
+                token = clean_token(tick["token"])
+                if not tick.get("symbol"):
+                    tick["symbol"] = sess.get("token_map", {}).get(token, "")
+                sess.get("ticks", {})[token] = tick
 
         def _neo_on_error(message):
             sessions.get(session_id, {})["last_ws_error"] = str(message)
@@ -636,6 +643,79 @@ def score_from_tv(symbol, tv_data, ltp):
 
 
 
+
+# =========================================================
+# STOCK ANALYSIS ORCHESTRATOR
+# =========================================================
+
+def analyze_symbol(symbol: str, neo_client=None):
+    """Analyze a stock with TradingView scanner data and optional Kotak Neo live price.
+
+    Public analysis does not require a Kotak session. If a logged-in Neo client is
+    available, its quote is preferred for LTP; otherwise TradingView scanner close
+    is used as the fallback price.
+    """
+    symbol = (symbol or "").strip().upper()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="Stock symbol is required.")
+
+    # TradingView scanner is the no-login analysis source.
+    try:
+        tv_data = fetch_tradingview_data(symbol)
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Market data request failed: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    tv_ltp = num(tv_data.get("close"))
+    ltp = tv_ltp
+    ltp_source = "TradingView scanner"
+
+    # Prefer the broker quote when the user has logged in.
+    if neo_client is not None:
+        try:
+            stock = find_stock(symbol, neo_client)
+            if stock:
+                token = clean_token(stock.get("pSymbol"))
+                segment = str(stock.get("pExchSeg", "nse_cm")).lower()
+                quote = neo_client.quotes(
+                    instrument_tokens=[{
+                        "instrument_token": token,
+                        "exchange_segment": segment
+                    }],
+                    quote_type="all"
+                )
+                neo_ltp = extract_ltp(quote)
+                if neo_ltp is not None:
+                    ltp = neo_ltp
+                    ltp_source = "Kotak Neo"
+        except Exception:
+            # Never make stock analysis fail just because the broker quote failed.
+            pass
+
+    if ltp is None:
+        raise HTTPException(status_code=502, detail=f"No price data available for {symbol}.")
+
+    result = score_from_tv(symbol, tv_data, ltp)
+    result["price_change_pct"] = num(tv_data.get("change"))
+    result["price_change_abs"] = num(tv_data.get("change_abs"))
+    result["volume"] = num(tv_data.get("volume"))
+    result["live_ltp_source"] = ltp_source
+    result["market_data_source"] = "TradingView Scanner"
+
+    score_history.append({
+        "time": result["analyzed_at"],
+        "symbol": symbol,
+        "score": result["score"],
+        "decision": result["decision"],
+        "ltp": result["ltp"]
+    })
+    if len(score_history) > 1000:
+        del score_history[:-1000]
+
+    return result
+
+
 # =========================================================
 # REAL-TIME KOTAK NEO MARKET STREAM
 # =========================================================
@@ -795,7 +875,7 @@ def health():
     return {
         "ok": True,
         "service": "StockMeter",
-        "version": "3.0-neo-integrated",
+        "version": "4.1-live-fixed",
         "active_sessions": len(sessions)
     }
 
@@ -832,69 +912,117 @@ def api_score(x: StockRequest, request: Request):
     return analyze_symbol(x.company, neo)
 
 @app.get("/api/market-overview")
-def api_market_overview():
-    """Current Indian market snapshot from TradingView scanner (no login required)."""
-    symbols = ["NSE:NIFTY", "NSE:BANKNIFTY", "BSE:SENSEX"]
-    payload = {
-        "symbols": {"tickers": symbols},
-        "columns": ["close", "change", "change_abs", "volume"]
-    }
+def api_market_overview(request: Request):
+    """Market snapshot. Uses Kotak Neo when logged in, TradingView scanner otherwise."""
+    session_id = request.headers.get("X-StockMeter-Session", "").strip()
+    if session_id and session_id in sessions:
+        try:
+            neo = sessions[session_id]["neo"]
+            names = [("NIFTY", "Nifty 50", "nse_cm"), ("BANKNIFTY", "Nifty Bank", "nse_cm"), ("SENSEX", "SENSEX", "bse_cm"), ("INDIA VIX", "INDIA VIX", "nse_cm")]
+            items=[]
+            for label, token, seg in names:
+                try:
+                    q=neo.quotes(instrument_tokens=[{"instrument_token":token,"exchange_segment":seg}], quote_type="all")
+                    raw=q
+                    if isinstance(raw,str):
+                        try: raw=json.loads(raw)
+                        except Exception: pass
+                    # Search common nested shapes.
+                    def walk(v):
+                        if isinstance(v,dict):
+                            yield v
+                            for vv in v.values(): yield from walk(vv)
+                        elif isinstance(v,list):
+                            for vv in v: yield from walk(vv)
+                    hit=None
+                    for o in walk(raw):
+                        p=next((num(o.get(k)) for k in ("ltp","lastPrice","pLtp","LTP","last_price") if o.get(k) is not None),None)
+                        if p is not None:
+                            hit=o; break
+                    if hit:
+                        ch=next((num(hit.get(k)) for k in ("changePercent","change_percentage","change_pct","pChange") if hit.get(k) is not None),None)
+                        items.append({"symbol":label,"price":p,"change_pct":ch,"source":"Kotak Neo"})
+                except Exception:
+                    pass
+            if items:
+                return {"items":items,"source":"Kotak Neo","updated_at":datetime.now(timezone.utc).isoformat()}
+        except Exception:
+            pass
+
+    symbols=["NSE:NIFTY","NSE:BANKNIFTY","BSE:SENSEX"]
+    payload={"symbols":{"tickers":symbols},"columns":["close","change","change_abs","volume"]}
     try:
-        r = requests.post(
-            "https://scanner.tradingview.com/india/scan",
-            json=payload,
-            headers={"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"},
-            timeout=10,
-        )
-        r.raise_for_status()
-        data = r.json().get("data", [])
-        out = []
+        r=requests.post("https://scanner.tradingview.com/india/scan",json=payload,headers={"User-Agent":"Mozilla/5.0","Content-Type":"application/json"},timeout=10)
+        r.raise_for_status(); data=r.json().get("data",[]); out=[]
         for row in data:
-            ticker = row.get("s", "")
-            vals = row.get("d", [])
-            item = dict(zip(payload["columns"], vals))
-            out.append({"symbol": ticker.split(":")[-1], "price": item.get("close"), "change_pct": item.get("change"), "change_abs": item.get("change_abs"), "volume": item.get("volume")})
-        return {"items": out, "updated_at": datetime.now(timezone.utc).isoformat()}
+            vals=dict(zip(payload["columns"],row.get("d",[])))
+            out.append({"symbol":row.get("s","").split(":")[-1],"price":vals.get("close"),"change_pct":vals.get("change"),"change_abs":vals.get("change_abs"),"volume":vals.get("volume"),"source":"TradingView scanner"})
+        return {"items":out,"source":"TradingView scanner","updated_at":datetime.now(timezone.utc).isoformat()}
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Market overview failed: {str(e)}")
 
 @app.get("/api/news")
-def api_news(q: str = "Indian stock market", limit: int = 5):
-    limit = max(1, min(int(limit), 20))
-    q = (q or "Indian stock market").strip()[:120]
-    urls = [
-        (
-            "https://news.google.com/rss/search?q="
-            + quote_plus(q + " when:2d")
-            + "&hl=en-IN&gl=IN&ceid=IN%3Aen",
-            "Google News"
-        ),
-        (
-            "https://www.bing.com/news/search?q=" + quote_plus(q) + "&format=rss",
-            "Bing News"
-        ),
+def api_news(q: str = "Indian stock market", limit: int = 8):
+    limit=max(1,min(int(limit),20)); q=(q or "Indian stock market").strip()[:120]
+    cache_key=q.lower(); now=time.time()
+    cached=news_cache.get(cache_key)
+    if cached and now-cached["time"] < news_cache_ttl:
+        return {**cached["data"],"cached":True}
+    urls=[
+        ("https://news.google.com/rss/search?q="+quote_plus(q+" when:2d")+"&hl=en-IN&gl=IN&ceid=IN%3Aen","Google News"),
+        ("https://www.bing.com/news/search?q="+quote_plus(q)+"&format=rss","Bing News")
     ]
     errors=[]
-    for rss_url, provider in urls:
+    for rss_url,provider in urls:
         try:
-            r = requests.get(rss_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-            r.raise_for_status()
-            root = ET.fromstring(r.content)
-            items=[]
-            for item in root.findall("./channel/item")[:limit]:
-                source_el=item.find("source")
-                source=(source_el.text.strip() if source_el is not None and source_el.text else provider)
-                items.append({
-                    "title": item.findtext("title") or "Market update",
-                    "link": item.findtext("link") or "",
-                    "published": item.findtext("pubDate") or "",
-                    "source": source,
-                })
+            r=requests.get(rss_url,headers={"User-Agent":"Mozilla/5.0"},timeout=10); r.raise_for_status()
+            root=ET.fromstring(r.content); items=[]; seen=set()
+            for item in root.findall("./channel/item"):
+                title=(item.findtext("title") or "Market update").strip()
+                key=re.sub(r"\W+"," ",title.lower()).strip()
+                if key in seen: continue
+                seen.add(key); source_el=item.find("source"); source=(source_el.text.strip() if source_el is not None and source_el.text else provider)
+                items.append({"title":title,"link":item.findtext("link") or "","published":item.findtext("pubDate") or "","source":source})
+                if len(items)>=limit: break
             if items:
-                return {"items": items, "provider": provider, "updated_at": datetime.now(timezone.utc).isoformat()}
-        except Exception as e:
-            errors.append(f"{provider}: {e}")
-    raise HTTPException(status_code=502, detail="News fetch failed. " + " | ".join(errors))
+                data={"items":items,"provider":provider,"updated_at":datetime.now(timezone.utc).isoformat(),"cached":False}
+                news_cache[cache_key]={"time":now,"data":data}; return data
+        except Exception as e: errors.append(f"{provider}: {e}")
+    raise HTTPException(status_code=502,detail="News fetch failed. "+" | ".join(errors))
+
+@app.get("/api/live-price")
+def api_live_price(symbol: str, request: Request):
+    symbol=symbol.strip().upper()
+    if not symbol: raise HTTPException(status_code=400,detail="Symbol is required")
+    session_id=request.headers.get("X-StockMeter-Session","").strip()
+    if session_id and session_id in sessions:
+        sess=sessions[session_id]; neo=sess["neo"]; stock=find_stock(symbol,neo)
+        if stock:
+            token=clean_token(stock.get("pSymbol")); sess["token_map"][token]=symbol
+            tick=sess.get("ticks",{}).get(token)
+            if tick and tick.get("ltp") is not None:
+                return {**tick,"source":"Kotak Neo WebSocket"}
+            try:
+                q=neo.quotes(instrument_tokens=[{"instrument_token":token,"exchange_segment":str(stock.get("pExchSeg","nse_cm")).lower()}],quote_type="all")
+                raw=q
+                if isinstance(raw,str):
+                    try: raw=json.loads(raw)
+                    except Exception: pass
+                def walk(v):
+                    if isinstance(v,dict):
+                        yield v
+                        for vv in v.values(): yield from walk(vv)
+                    elif isinstance(v,list):
+                        for vv in v: yield from walk(vv)
+                for o in walk(raw):
+                    p=next((num(o.get(k)) for k in ("ltp","lastPrice","pLtp","LTP","last_price") if o.get(k) is not None),None)
+                    if p is not None:
+                        ch=next((num(o.get(k)) for k in ("changePercent","change_percentage","change_pct","pChange") if o.get(k) is not None),None)
+                        return {"type":"tick","symbol":symbol,"token":token,"ltp":p,"change_pct":ch,"source":"Kotak Neo quote","raw_time":datetime.now(timezone.utc).isoformat()}
+            except Exception: pass
+    try:
+        tv=fetch_tradingview_data(symbol); return {"type":"tick","symbol":symbol,"ltp":num(tv.get("close")),"change_pct":num(tv.get("change")),"source":"TradingView scanner","raw_time":datetime.now(timezone.utc).isoformat()}
+    except Exception as e: raise HTTPException(status_code=502,detail=f"Live price failed: {e}")
 
 @app.post("/api/compare")
 def api_compare(x: CompareRequest, request: Request):
@@ -1170,6 +1298,14 @@ def api_neo_limits(request: Request):
         return data
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Kotak limits failed: {str(e)}")
+
+@app.get("/api/live-status")
+def api_live_status(request: Request):
+    sid=request.headers.get("X-StockMeter-Session","").strip()
+    if not sid or sid not in sessions:
+        return {"logged_in":False,"source":"TradingView scanner","websocket":"offline"}
+    s=sessions[sid]
+    return {"logged_in":True,"source":"Kotak Neo","websocket":"ready","tick_count":len(s.get("ticks",{})),"last_ws_error":s.get("last_ws_error") }
 
 @app.get("/api/history")
 def api_history(symbol: Optional[str] = None, limit: int = 50, request: Request = None):
