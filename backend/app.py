@@ -428,7 +428,7 @@ def clean_token(val):
         return str(val).strip()
 
 
-def extract_fallback_metrics(t: yf.Ticker, info: dict):
+def extract_fallback_metrics(t, info: dict):
     """
     Fallback extractor for NSE metrics missing in yfinance .info
     Calculates Current Ratio, FCF, ROE, Earnings Growth, and PEG directly
