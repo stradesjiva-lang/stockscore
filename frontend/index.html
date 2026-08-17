@@ -1,493 +1,153 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StockMeter Dashboard - Pro Edition</title>
-    
-    <!-- Tailwind CSS for Layout & Styling -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Font Awesome for Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    
-    <!-- Chart.js for Price Chart -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-    <!-- Tailwind Config for exact color matching -->
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', 'sans-serif'] },
-                    colors: {
-                        brand: {
-                            sidebar: '#0f1627',
-                            sidebarhover: '#1e293b',
-                            green: '#00b852',
-                            bg: '#f8f9fa',
-                            purple: '#7c3aed',
-                            premium: '#eab308',
-                            textdark: '#1e293b',
-                            textgray: '#64748b'
-                        }
-                    },
-                    boxShadow: { 'card': '0 2px 10px rgba(0, 0, 0, 0.03)' }
-                }
-            }
-        }
-    </script>
-    <style>
-        body { background-color: #f8f9fa; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StockMeter — Unlimited Stock Intelligence</title>
+<style>
+:root{--navy:#061426;--navy2:#0b1d34;--green:#0bbf6a;--blue:#2563eb;--purple:#7c3aed;--orange:#f59e0b;--red:#ef4444;--text:#111827;--muted:#64748b;--line:#e5e7eb;--bg:#f5f7fb;--card:#fff}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:var(--text);background:var(--bg)}
+button,input,select{font:inherit}.app{min-height:100vh;display:flex}.sidebar{width:255px;background:linear-gradient(180deg,#061426,#071b32);color:#fff;position:fixed;inset:0 auto 0 0;z-index:30;display:flex;flex-direction:column}.brand{height:72px;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;gap:10px;align-items:center}.brandmark{font-size:31px;font-weight:900;color:#08c66f}.brand h1{font-size:22px;margin:0}.brand small{display:block;font-size:11px;color:#fff}.nav{padding:18px 14px;display:grid;gap:4px}.nav button{background:transparent;border:0;color:#d8e2ee;text-align:left;padding:11px 12px;border-radius:7px;cursor:pointer;font-weight:650;font-size:13px}.nav button:hover,.nav button.active{background:#0d263e;color:#16d778}.nav button.active{border-left:3px solid #0bd276;padding-left:9px}.badge{float:right;font-size:10px;padding:3px 7px;border-radius:5px;background:#6d28d9;color:#fff}.badge.gold{background:#d59b00}.badge.new{background:#098b57}.upgrade{margin:auto 14px 14px;padding:18px;background:linear-gradient(145deg,#241151,#32146b);border-radius:9px}.upgrade h3{margin:0 0 8px;font-size:14px}.upgrade p{font-size:12px;color:#ddd;margin:0 0 13px;line-height:1.5}.upgrade button{width:100%;border:0;border-radius:6px;padding:10px;background:#7b20dd;color:#fff;font-weight:800}.copyright{font-size:10px;color:#9aa8b9;padding:0 18px 14px}.main{margin-left:255px;width:calc(100% - 255px)}.top{height:72px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 25px;gap:28px;position:sticky;top:0;z-index:20}.search{display:flex;width:min(520px,52vw);height:40px}.search input{flex:1;border:1px solid #dbe1e8;border-right:0;border-radius:6px 0 0 6px;padding:0 13px;outline:0}.search button{border:0;background:#0ab765;color:#fff;padding:0 21px;border-radius:0 6px 6px 0;font-weight:800;cursor:pointer}.toplinks{margin-left:auto;display:flex;gap:28px;align-items:center;font-size:13px;font-weight:750}.toplinks button{border:0;background:none;cursor:pointer;color:#111}.toplinks .active{color:#0ab765;border-bottom:2px solid #0ab765;padding-bottom:8px}.avatar{width:40px;height:40px;border-radius:50%;background:#f3f4f6;display:grid;place-items:center;font-weight:800}.ticker{height:42px;background:#fff;display:flex;align-items:center;justify-content:center;gap:28px;color:#2563eb;font-size:12px;font-weight:700;border-bottom:1px solid #eef1f5}.content{padding:14px;max-width:1320px;margin:auto}.gridtop{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:14px}.card{background:var(--card);border:1px solid #edf0f4;border-radius:9px;box-shadow:0 2px 7px rgba(15,23,42,.035)}.hero{padding:14px}.herohead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.company{display:flex;gap:13px;align-items:center}.logo{width:60px;height:60px;border-radius:50%;background:linear-gradient(145deg,#2b55db,#4520ba);color:#fff;display:grid;place-items:center;font-size:18px;font-weight:850}.company h2{margin:0;font-size:20px}.company p{margin:4px 0 0;font-size:12px;color:#475569}.watchbtn{border:1px solid #dbe2ea;background:#fff;padding:9px 13px;border-radius:6px;cursor:pointer;font-size:12px}.heroMetrics{display:grid;grid-template-columns:1.05fr .9fr 1fr;gap:10px;align-items:stretch}.pricebox{padding:10px 0}.label{font-size:11px;color:#334155}.price{font-size:30px;font-weight:850;margin:8px 0}.up{color:#08a957;font-size:12px;font-weight:800}.scorebox{border:1px solid #eef1f4;border-radius:7px;text-align:center;padding:10px}.scorebox h3{margin:0;font-size:12px}.score{font-size:55px;line-height:1;color:#08a957;font-weight:850;margin:7px 0}.score small{font-size:20px;color:#334155;font-weight:500}.decision{display:inline-block;background:#09ae5b;color:#fff;border-radius:20px;padding:7px 22px;font-size:14px;font-weight:850}.quality{font-size:12px;color:#475569;margin-top:8px}.fair{border:1px solid #eef1f4;border-radius:7px;padding:5px 13px}.fairrow{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #edf0f4;font-size:11px}.fairrow:last-child{border:0}.green{color:#08a957;font-weight:800}.bar{height:6px;background:#e9edf3;border-radius:10px;overflow:hidden}.bar i{display:block;height:100%;background:#0ab765;border-radius:10px}.category{margin-top:14px;display:grid;grid-template-columns:repeat(4,1fr);background:#fff;border:1px solid #edf0f4;border-radius:9px}.cat{padding:14px 15px;border-right:1px solid #edf0f4}.cat:last-child{border:0}.cathead{display:flex;gap:9px;align-items:center}.icon{width:38px;height:38px;border-radius:9px;background:#eef4ff;display:grid;place-items:center;font-size:20px}.cat:nth-child(2) .icon{background:#e9fbf2}.cat:nth-child(3) .icon{background:#f3eaff}.cat:nth-child(4) .icon{background:#fff5e5}.catname{font-size:11px;font-weight:800}.catnum{font-size:16px;font-weight:800}.cat .bar{margin-top:9px}.cat .bar i.blue{background:#2859df}.cat .bar i.purple{background:#7c3aed}.cat .bar i.orange{background:#f59e0b}.catnote{text-align:center;font-size:10px;color:#475569;margin-top:7px}.news{padding:13px}.sectiontitle{font-size:14px;font-weight:850;margin:0 0 10px}.filters{display:flex;gap:6px;margin-bottom:9px}.filters button{border:1px solid #dfe4ea;background:#fff;border-radius:6px;padding:6px 10px;font-size:10px;cursor:pointer}.filters button.active{background:#0ab765;color:#fff;border-color:#0ab765}.newsitem{display:flex;gap:9px;padding:9px 0;border-bottom:1px solid #edf0f4}.newsitem:last-child{border:0}.thumb{width:66px;height:45px;border-radius:5px;background:#e9eef7;display:grid;place-items:center;flex:none}.newsitem b{font-size:11px;line-height:1.3}.meta{font-size:9px;color:#64748b;margin-top:4px}.below{display:grid;grid-template-columns:1.25fr .75fr;gap:14px;margin-top:14px}.breakcard,.chartcard,.watchcard{padding:14px}.breakgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:0}.bd{padding:0 12px;border-right:1px solid #edf0f4}.bd:first-child{padding-left:0}.bd:last-child{border:0}.bd h4{font-size:11px;margin:0 0 11px}.bd h4.blue{color:#2458dc}.bd h4.green{color:#079b53}.bd h4.purple{color:#7136d9}.bd h4.orange{color:#d87900}.metric{display:flex;justify-content:space-between;gap:8px;font-size:10px;padding:6px 0}.metric span{text-transform:capitalize;color:#475569}.details{display:block;color:#174dd5;font-size:10px;margin-top:12px;text-decoration:none}.chart{height:220px;position:relative;overflow:hidden;background:linear-gradient(180deg,#fff,#fbfffd)}.chart svg{width:100%;height:100%}.periods{display:flex;gap:7px;justify-content:flex-end;margin-bottom:6px}.periods button{font-size:10px;padding:5px 9px;border:1px solid #dfe4ea;background:#fff;border-radius:5px}.periods button.active{background:#09ae5b;color:#fff;border-color:#09ae5b}.watchrow{display:grid;grid-template-columns:1fr 1fr 55px;gap:8px;font-size:11px;padding:9px 0;border-bottom:1px solid #edf0f4}.watchrow.head{font-size:10px;color:#64748b}.right{text-align:right}.featuregrid{margin-top:14px;display:grid;grid-template-columns:repeat(6,1fr);background:#fff;border:1px solid #edf0f4;border-radius:9px}.feature{padding:15px;text-align:center;border-right:1px solid #edf0f4}.feature:last-child{border:0}.feature .bigicon{font-size:27px}.feature h3{font-size:12px;margin:8px 0}.feature p{font-size:10px;color:#64748b;line-height:1.4;min-height:29px}.feature button{font-size:10px;background:#fff;border:1px solid #b9c9e9;border-radius:5px;padding:7px 10px;cursor:pointer}.disclaimer{font-size:9px;color:#334155;padding:8px}.page{display:none}.page.active{display:block}.toolcard{padding:18px}.toolinput{display:flex;gap:8px}.toolinput input{flex:1;border:1px solid #dbe2ea;border-radius:6px;padding:10px}.toolinput button{border:0;background:#2563eb;color:#fff;border-radius:6px;padding:0 17px;font-weight:800}.result{margin-top:14px}.table{width:100%;border-collapse:collapse;font-size:12px}.table th,.table td{padding:9px;border-bottom:1px solid #edf0f4;text-align:left}.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;align-items:center;justify-content:center}.modalbox{width:370px;background:#fff;border-radius:10px;padding:22px}.modalbox input{width:100%;padding:11px;border:1px solid #ccd5df;border-radius:6px}.modalbox button{padding:10px 14px;border:0;border-radius:6px;cursor:pointer}.loginmain{background:#2563eb;color:#fff}.mobile{display:none}
+@media(max-width:1050px){.sidebar{width:215px}.main{margin-left:215px;width:calc(100% - 215px)}.gridtop{grid-template-columns:1fr}.news{display:none}.featuregrid{grid-template-columns:repeat(3,1fr)}.toplinks{gap:10px}.heroMetrics{grid-template-columns:1fr 1fr}.fair{grid-column:1/-1}}
+@media(max-width:760px){.sidebar{display:none}.main{margin:0;width:100%}.mobile{display:block}.top{padding:0 10px}.toplinks{display:none}.search{width:100%}.ticker{overflow:auto;justify-content:flex-start;padding-left:10px}.content{padding:8px}.category{grid-template-columns:1fr 1fr}.below{grid-template-columns:1fr}.breakgrid{grid-template-columns:1fr 1fr}.featuregrid{grid-template-columns:1fr 1fr}.heroMetrics{grid-template-columns:1fr}.fair{grid-column:auto}.herohead{align-items:flex-start}.company h2{font-size:16px}}
+</style>
 </head>
-<body class="font-sans text-brand-textdark overflow-hidden flex h-screen">
+<body>
+<div class="app">
+<aside class="sidebar">
+  <div class="brand"><div class="brandmark">SM</div><div><h1>StockMeter</h1><small>Unlimited Stock Intelligence</small></div></div>
+  <nav class="nav">
+    <button class="active" onclick="page('dashboard',this)">⌂ &nbsp; Dashboard</button>
+    <button onclick="page('analyze',this)">⌕ &nbsp; Analyze Stock</button>
+    <button onclick="page('compare',this)">♧ &nbsp; Peer Comparison <span class="badge">PRO</span></button>
+    <button onclick="page('screener',this)">⏳ &nbsp; Stock Screener <span class="badge">PRO</span></button>
+    <button onclick="page('portfolio',this)">▣ &nbsp; Portfolio Analyzer <span class="badge gold">PREMIUM</span></button>
+    <button onclick="page('history',this)">◷ &nbsp; Score History <span class="badge">PRO</span></button>
+    <button onclick="page('alerts',this)">♧ &nbsp; Alerts <span class="badge">PRO</span></button>
+    <button onclick="page('news',this)">▤ &nbsp; Market News <span class="badge new">NEW</span></button>
+    <button onclick="page('watchlist',this)">☆ &nbsp; Watchlist</button>
+    <button onclick="page('reports',this)">▤ &nbsp; My Reports</button>
+    <button onclick="page('how',this)">? &nbsp; How It Works</button>
+  </nav>
+  <div class="upgrade"><h3>🛠 Upgrade for More</h3><p>Get advanced analytics, portfolio tools, alerts & more.</p><button onclick="alert('All features are currently unlocked in this build.')">View Plans</button></div>
+  <div class="copyright">© 2026 StockMeter<br>All rights reserved.</div>
+</aside>
 
-    <!-- SIDEBAR -->
-    <aside class="w-64 bg-brand-sidebar text-white flex flex-col h-full flex-shrink-0 relative z-20">
-        <div class="h-16 flex items-center px-6 border-b border-gray-800">
-            <div class="flex items-center gap-2">
-                <div class="bg-brand-green text-white font-bold text-xl px-2 py-1 rounded">SM</div>
-                <div>
-                    <h1 class="font-bold text-lg leading-tight">StockMeter</h1>
-                    <p class="text-[10px] text-gray-400">Pro Edition</p>
-                </div>
-            </div>
+<main class="main">
+<header class="top">
+  <button class="mobile" onclick="document.querySelector('.sidebar').style.display='flex'">☰</button>
+  <div class="search"><input id="globalSearch" placeholder="Search or enter stock (e.g. TCS, RELIANCE, INFY)" value="TCS"><button onclick="runAnalyze()">Analyze</button></div>
+  <div class="toplinks">
+    <button class="active" onclick="page('dashboard',this)">Dashboard</button><button onclick="page('screener',this)">Screener</button><button onclick="page('portfolio',this)">Portfolio</button><button onclick="page('news',this)">Market News</button><button onclick="page('alerts',this)">Alerts</button><span>🔔</span><span>◐</span><span class="avatar">U</span>
+  </div>
+</header>
+<div class="ticker"><span>∞ Unlimited Analyses</span><span>•</span><span>◉ No Limits</span><span>•</span><span>◉ Real-time Data</span><span>•</span><span>◉ 100-Point Stock Score</span><span>•</span><span>✓ All Features Unlocked</span></div>
+
+<section id="dashboard" class="page active content">
+  <div class="gridtop">
+    <div>
+      <div class="card hero">
+        <div class="herohead"><div class="company"><div class="logo" id="logo">TCS</div><div><h2 id="company">Tata Consultancy Services Ltd.</h2><p>NSE: <b id="symbol">TCS</b> &nbsp; | &nbsp; IT Services</p></div></div><button class="watchbtn" onclick="toggleWatch()">☆ Add to Watchlist</button></div>
+        <div class="heroMetrics">
+          <div class="pricebox"><span class="label">Current Price</span><div class="price" id="price">₹—</div><div class="up" id="change">▲ Live price from Kotak Neo</div><div class="meta">Live market quote</div></div>
+          <div class="scorebox"><h3>STOCKMETER SCORE ⓘ</h3><div class="score" id="score">—<small>/100</small></div><span class="decision" id="decision">ANALYZE</span><div class="quality">Quality & signal score</div></div>
+          <div class="fair"><div class="fairrow"><span>Fair Value</span><b id="fair">₹—</b></div><div class="fairrow"><span>Upside Potential</span><b class="green" id="upside">—</b></div><div class="fairrow"><span>Buy Zone</span><b id="zone">—</b></div><div class="fairrow"><span>Margin of Safety</span><b id="mos">—</b></div><div class="fairrow"><span>Data Confidence</span><div style="width:100px"><b id="conf">—</b><div class="bar"><i id="confline" style="width:0"></i></div></div></div></div>
         </div>
-
-        <div class="flex-1 overflow-y-auto py-4 custom-scrollbar">
-            <nav class="space-y-1">
-                <a href="#" class="flex items-center px-6 py-3 bg-gray-800/50 text-brand-green border-l-4 border-brand-green">
-                    <i class="fa-solid fa-house w-6 text-center"></i><span class="ml-3 font-medium text-sm">Dashboard</span>
-                </a>
-                <a href="#" class="flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-brand-sidebarhover transition">
-                    <i class="fa-solid fa-magnifying-glass-chart w-6 text-center"></i><span class="ml-3 text-sm">Analyze Stock</span>
-                </a>
-                
-                <div class="mt-4 mb-2 px-6"></div> 
-
-                <a href="#" class="flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-brand-sidebarhover transition justify-between">
-                    <div class="flex items-center"><i class="fa-solid fa-users w-6 text-center"></i><span class="ml-3 text-sm">Peer Comparison</span></div>
-                </a>
-                <a href="#" class="flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-brand-sidebarhover transition justify-between">
-                    <div class="flex items-center"><i class="fa-solid fa-filter w-6 text-center"></i><span class="ml-3 text-sm">Stock Screener</span></div>
-                </a>
-                <a href="#" class="flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-brand-sidebarhover transition justify-between">
-                    <div class="flex items-center"><i class="fa-solid fa-briefcase w-6 text-center"></i><span class="ml-3 text-sm">Portfolio Analyzer</span></div>
-                </a>
-                <a href="#" class="flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-brand-sidebarhover transition justify-between">
-                    <div class="flex items-center"><i class="fa-solid fa-clock-rotate-left w-6 text-center"></i><span class="ml-3 text-sm">Score History</span></div>
-                </a>
-                <a href="#" class="flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-brand-sidebarhover transition justify-between">
-                    <div class="flex items-center"><i class="fa-solid fa-bell w-6 text-center"></i><span class="ml-3 text-sm">Alerts</span></div>
-                </a>
-            </nav>
-
-            <div class="px-6 pb-6 text-xs text-gray-500 mt-10">
-                <button id="logoutBtnSide" class="w-full text-red-400 hover:text-red-300 font-medium py-2 mb-4 border border-red-900 rounded hidden">Logout from Neo</button>
-                <p>© 2026 StockMeter</p>
-                <p class="mb-3">All rights reserved.</p>
-            </div>
-        </div>
-    </aside>
-
-    <!-- MAIN CONTENT AREA -->
-    <main class="flex-1 flex flex-col h-full relative">
-        
-        <!-- TOP NAVBAR -->
-        <header class="h-16 bg-brand-sidebar flex items-center justify-between px-6 z-10">
-            <!-- Search -->
-            <div class="flex items-center w-full max-w-xl">
-                <div class="relative w-full flex">
-                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <i class="fa-solid fa-magnifying-glass text-gray-400 text-sm"></i>
-                    </div>
-                    <input type="text" id="searchInput" placeholder="Search or enter stock (e.g. TCS, RELIANCE, INFY)" class="w-full pl-10 pr-4 py-2 rounded-l-md text-sm outline-none text-gray-700 font-semibold uppercase">
-                    <button id="analyzeBtn" class="bg-brand-green hover:bg-green-600 text-white px-6 py-2 rounded-r-md text-sm font-medium transition whitespace-nowrap w-32">Analyze</button>
-                </div>
-            </div>
-
-            <!-- Right Nav -->
-            <div class="flex items-center gap-6 text-white text-sm">
-                <a href="#" class="font-medium text-brand-green border-b-2 border-brand-green pb-5 mt-5">Dashboard</a>
-                <a href="#" class="text-gray-300 hover:text-white transition">Market News</a>
-                
-                <div class="flex items-center gap-4 ml-2 border-l border-gray-700 pl-6">
-                    <div class="relative cursor-pointer">
-                        <i class="fa-regular fa-bell text-lg text-gray-300 hover:text-white"></i>
-                        <span class="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center border-2 border-brand-sidebar">0</span>
-                    </div>
-                    <div class="w-8 h-8 rounded-full bg-brand-green text-white flex items-center justify-center font-bold text-sm cursor-pointer ml-1" title="Connected">✔</div>
-                </div>
-            </div>
-        </header>
-
-        <!-- SUB HEADER -->
-        <div class="bg-white border-b border-gray-200 py-2.5 px-6 flex justify-center gap-8 text-xs font-medium text-blue-800 shadow-sm">
-            <span class="flex items-center gap-1.5"><i class="fa-solid fa-infinity text-blue-600"></i> Pro Analysis Enabled</span>
-            <span class="text-gray-300">•</span>
-            <span class="flex items-center gap-1.5"><i class="fa-solid fa-bolt text-blue-600"></i> Multi-Session Active</span>
-            <span class="text-gray-300">•</span>
-            <span class="flex items-center gap-1.5 text-brand-green"><i class="fa-solid fa-square-check"></i> Connected to Kotak Neo</span>
-        </div>
-
-        <!-- SCROLLABLE DASHBOARD CONTENT -->
-        <div class="flex-1 overflow-y-auto p-6">
-            <div class="max-w-[1400px] mx-auto flex flex-col gap-6">
-
-                <div class="grid grid-cols-12 gap-6">
-                    <!-- LEFT COLUMN -->
-                    <div class="col-span-12 xl:col-span-9 flex flex-col gap-6">
-                        
-                        <!-- MAIN CARD -->
-                        <div class="bg-white rounded-xl shadow-card p-6 border border-gray-100 flex flex-col lg:flex-row gap-6 relative">
-                            <!-- Basic Info -->
-                            <div class="flex-1 border-r border-gray-100 pr-6">
-                                <div class="flex justify-between items-start mb-6">
-                                    <div class="flex items-center gap-4">
-                                        <div id="uiLogo" class="w-14 h-14 rounded-full bg-blue-700 text-white flex items-center justify-center text-xl font-bold">SM</div>
-                                        <div>
-                                            <h2 id="uiTitle" class="text-xl font-bold text-gray-900 uppercase">Search a Stock</h2>
-                                            <p id="uiSymbol" class="text-sm text-brand-textgray mt-0.5">NSE <span class="mx-2 text-gray-300">|</span> Live Data</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div class="mt-8">
-                                    <p class="text-sm text-brand-textgray mb-1">Current Price (LTP)</p>
-                                    <div class="flex items-end gap-3 mb-1">
-                                        <h3 id="uiPrice" class="text-4xl font-bold text-gray-900 tracking-tight">₹0.00</h3>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Score -->
-                            <div class="px-6 flex flex-col items-center justify-center text-center">
-                                <h4 class="text-xs font-bold tracking-wider text-gray-500 uppercase mb-4 flex items-center gap-1">StockMeter Score</h4>
-                                <div class="relative w-32 h-32 flex items-center justify-center mb-4">
-                                    <svg class="absolute inset-0 w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                                        <circle cx="50" cy="50" r="45" fill="none" stroke="#f1f5f9" stroke-width="8"></circle>
-                                        <circle id="uiScoreRing" cx="50" cy="50" r="45" fill="none" stroke="#00b852" stroke-width="8" stroke-dasharray="283" stroke-dashoffset="0" stroke-linecap="round"></circle>
-                                    </svg>
-                                    <div class="text-center z-10 relative top-1">
-                                        <span id="uiScore" class="text-5xl font-bold text-brand-green">--</span>
-                                        <span class="text-gray-400 text-xl">/100</span>
-                                    </div>
-                                </div>
-                                <button id="uiDecisionBtn" class="bg-gray-200 text-gray-700 px-8 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 shadow-md transition">
-                                    <i class="fa-solid fa-minus"></i> WAITING
-                                </button>
-                            </div>
-
-                            <!-- Valuation Metrics -->
-                            <div class="flex-1 pl-6 border-l border-gray-100 flex flex-col justify-center">
-                                <div class="space-y-4">
-                                    <div class="flex justify-between items-center pb-2 border-b border-gray-50">
-                                        <span class="text-sm font-medium text-brand-textdark">Fair Value</span>
-                                        <span id="uiFairValue" class="text-sm font-bold">--</span>
-                                    </div>
-                                    <div class="flex justify-between items-center pb-2 border-b border-gray-50">
-                                        <span class="text-sm font-medium text-brand-textdark">Upside Potential</span>
-                                        <span id="uiUpside" class="text-sm font-bold text-brand-green">--</span>
-                                    </div>
-                                    <div class="flex justify-between items-center pb-2 border-b border-gray-50">
-                                        <span class="text-sm font-medium text-brand-textdark">Buy Zone</span>
-                                        <span id="uiBuyZone" class="text-sm font-bold">--</span>
-                                    </div>
-                                    <div class="flex justify-between items-center pb-2 border-b border-gray-50">
-                                        <span class="text-sm font-medium text-brand-textdark">Margin of Safety</span>
-                                        <span id="uiMargin" class="text-sm font-bold">--</span>
-                                    </div>
-                                    <div class="flex justify-between items-center pt-1">
-                                        <span class="text-sm font-medium text-brand-textdark">Data Confidence</span>
-                                        <div class="flex items-center gap-3">
-                                            <div class="w-24 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                                <div id="uiConfidenceBar" class="h-full bg-brand-green transition-all duration-500" style="width: 0%"></div>
-                                            </div>
-                                            <span id="uiConfidenceTxt" class="text-sm font-bold text-brand-green">0%</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- CATEGORY SCORES -->
-                        <div class="grid grid-cols-4 gap-6">
-                            <!-- Foundational Categories -->
-                            <div class="bg-white rounded-xl shadow-card p-5 border border-gray-100 flex flex-col relative overflow-hidden">
-                                <p class="text-xs font-bold text-blue-800 tracking-wide uppercase mb-1">Fundamental</p>
-                                <div class="flex items-baseline gap-1"><span id="uiFundScore" class="text-2xl font-bold text-gray-900">-</span><span class="text-sm text-gray-500">/40</span></div>
-                            </div>
-                            <div class="bg-white rounded-xl shadow-card p-5 border border-gray-100 flex flex-col relative overflow-hidden">
-                                <p class="text-xs font-bold text-green-700 tracking-wide uppercase mb-1">Technical</p>
-                                <div class="flex items-baseline gap-1"><span id="uiTechScore" class="text-2xl font-bold text-gray-900">-</span><span class="text-sm text-gray-500">/25</span></div>
-                            </div>
-                            <div class="bg-white rounded-xl shadow-card p-5 border border-gray-100 flex flex-col relative overflow-hidden">
-                                <p class="text-xs font-bold text-purple-700 tracking-wide uppercase mb-1">Valuation</p>
-                                <div class="flex items-baseline gap-1"><span id="uiValScore" class="text-2xl font-bold text-gray-900">-</span><span class="text-sm text-gray-500">/20</span></div>
-                            </div>
-                            <div class="bg-white rounded-xl shadow-card p-5 border border-gray-100 flex flex-col relative overflow-hidden">
-                                <p class="text-xs font-bold text-orange-600 tracking-wide uppercase mb-1">Risk</p>
-                                <div class="flex items-baseline gap-1"><span id="uiRiskScore" class="text-2xl font-bold text-gray-900">-</span><span class="text-sm text-gray-500">/15</span></div>
-                            </div>
-                        </div>
-
-                    </div>
-
-                    <!-- RIGHT COLUMN -->
-                    <div class="col-span-12 xl:col-span-3 flex flex-col gap-6">
-                        <div class="bg-white rounded-xl shadow-card p-5 border border-gray-100 flex-1">
-                            <div class="flex justify-between items-center mb-4">
-                                <h3 class="font-bold text-gray-900 text-base">Key Insights</h3>
-                            </div>
-                            <div id="uiInsights" class="space-y-3 text-sm">
-                                <p class="text-gray-500 text-xs italic">Analyze a stock to see insights.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </main>
-
-    <!-- KOTAK NEO LOGIN MODAL -->
-    <div id="loginModal" class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center backdrop-blur-sm transition-opacity">
-        <div class="bg-white rounded-2xl p-8 max-w-sm w-full shadow-2xl relative border-t-4 border-brand-green">
-            <div class="flex justify-center mb-4">
-                <div class="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center">
-                    <i class="fa-solid fa-shield-halved text-brand-green text-3xl"></i>
-                </div>
-            </div>
-            <h2 class="text-2xl font-bold text-gray-900 mb-1 text-center">Connect Broker</h2>
-            <p class="text-sm text-gray-500 mb-6 text-center">Enter Kotak Neo 6-digit TOTP to authorize secure API access.</p>
-            
-            <input type="text" id="totpInput" maxlength="6" autocomplete="off" placeholder="000000" class="w-full border-2 border-gray-200 px-4 py-4 rounded-xl text-3xl tracking-[0.5em] text-center font-black outline-none focus:border-brand-green transition-colors mb-6 text-gray-800">
-            
-            <button id="loginBtn" class="w-full bg-brand-green hover:bg-green-600 text-white font-bold py-3.5 rounded-xl shadow-lg transition flex justify-center items-center gap-2">
-                <i class="fa-solid fa-lock"></i> Verify & Login
-            </button>
-        </div>
+      </div>
+      <div class="category">
+        <div class="cat"><div class="cathead"><div class="icon">🏛</div><div><div class="catname">Fundamental</div><div class="catnum" id="fscore">—/40</div></div></div><div class="bar"><i id="fp" class="blue"></i></div><div class="catnote">Strong</div></div>
+        <div class="cat"><div class="cathead"><div class="icon">📈</div><div><div class="catname">Technical</div><div class="catnum" id="tscore">—/25</div></div></div><div class="bar"><i id="tp"></i></div><div class="catnote">Good</div></div>
+        <div class="cat"><div class="cathead"><div class="icon">💲</div><div><div class="catname">Valuation</div><div class="catnum" id="vscore">—/20</div></div></div><div class="bar"><i id="vp" class="purple"></i></div><div class="catnote">Good</div></div>
+        <div class="cat"><div class="cathead"><div class="icon">🛡</div><div><div class="catname">Risk</div><div class="catnum" id="rscore">—/15</div></div></div><div class="bar"><i id="rp" class="orange"></i></div><div class="catnote">Moderate</div></div>
+      </div>
     </div>
+    <div class="card news"><div class="sectiontitle">Market News <a style="float:right;color:#1554d6;font-size:10px;cursor:pointer" onclick="page('news')">View All</a></div><div class="filters"><button class="active" onclick="loadNews('Indian stock market')">All</button><button onclick="loadNews('India market')">India Market</button><button onclick="loadNews('NIFTY')">NIFTY</button><button onclick="loadNews('stocks India')">Stocks</button><button onclick="loadNews('RBI')">RBI</button><button onclick="loadNews('SEBI')">SEBI</button></div><div id="newsMini"><div class="meta">Loading market news...</div></div></div>
+  </div>
 
-    <!-- FRONTEND JAVASCRIPT CONNECTION TO BACKEND -->
-    <script>
-        document.addEventListener('DOMContentLoaded', async () => {
-            // Modal Elements
-            const modal = document.getElementById('loginModal');
-            const loginBtn = document.getElementById('loginBtn');
-            const logoutBtnSide = document.getElementById('logoutBtnSide');
-            const totpInput = document.getElementById('totpInput');
-            
-            // Search Elements
-            const analyzeBtn = document.getElementById('analyzeBtn');
-            const searchInput = document.getElementById('searchInput');
+  <div class="below">
+    <div class="card breakcard"><div class="sectiontitle">Detailed Score Breakdown ⓘ</div><div class="breakgrid" id="breakdown"><div class="meta">Analyze a stock to load score details.</div></div></div>
+    <div class="card chartcard"><div class="sectiontitle">Price Chart</div><div class="periods"><button>1M</button><button>3M</button><button>6M</button><button class="active">1Y</button><button>3Y</button><button>5Y</button></div><div class="chart"><svg viewBox="0 0 600 240" preserveAspectRatio="none"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#0ab765" stop-opacity=".22"/><stop offset="1" stop-color="#0ab765" stop-opacity="0"/></linearGradient></defs><path d="M0 205 L20 197 L40 201 L60 188 L80 192 L100 174 L120 181 L140 164 L160 169 L180 148 L200 154 L220 139 L240 143 L260 127 L280 136 L300 112 L320 119 L340 102 L360 108 L380 90 L400 101 L420 82 L440 94 L460 72 L480 82 L500 59 L520 69 L540 48 L560 58 L580 37 L600 43 L600 240 L0 240Z" fill="url(#g)"/><polyline points="0,205 20,197 40,201 60,188 80,192 100,174 120,181 140,164 160,169 180,148 200,154 220,139 240,143 260,127 280,136 300,112 320,119 340,102 360,108 380,90 400,101 420,82 440,94 460,72 480,82 500,59 520,69 540,48 560,58 580,37 600,43" fill="none" stroke="#0ab765" stroke-width="3"/></svg></div><div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b"><span>1M</span><span>3M</span><span>6M</span><span>1Y</span><span>52W High</span><span>52W Low</span></div></div>
+  </div>
 
-            // UI Elements to Update
-            const uiPrice = document.getElementById('uiPrice');
-            const uiScore = document.getElementById('uiScore');
-            const uiScoreRing = document.getElementById('uiScoreRing');
-            const uiTitle = document.getElementById('uiTitle');
-            const uiSymbol = document.getElementById('uiSymbol');
-            const uiLogo = document.getElementById('uiLogo');
-            const uiDecisionBtn = document.getElementById('uiDecisionBtn');
-            
-            const uiFairValue = document.getElementById('uiFairValue');
-            const uiUpside = document.getElementById('uiUpside');
-            const uiBuyZone = document.getElementById('uiBuyZone');
-            const uiMargin = document.getElementById('uiMargin');
-            const uiConfidenceTxt = document.getElementById('uiConfidenceTxt');
-            const uiConfidenceBar = document.getElementById('uiConfidenceBar');
-            
-            const uiFundScore = document.getElementById('uiFundScore');
-            const uiTechScore = document.getElementById('uiTechScore');
-            const uiValScore = document.getElementById('uiValScore');
-            const uiRiskScore = document.getElementById('uiRiskScore');
-            const uiInsights = document.getElementById('uiInsights');
+  <div class="below" style="grid-template-columns:1fr 1fr;margin-top:14px">
+    <div class="card watchcard"><div class="sectiontitle">My Watchlist <a style="float:right;color:#1554d6;font-size:10px;cursor:pointer" onclick="page('watchlist')">View All</a></div><div class="watchrow head"><span>Stock</span><span>Price</span><span class="right">Score</span></div><div id="watchMini"></div></div>
+    <div class="card watchcard"><div class="sectiontitle">Analysis Summary</div><div class="metric"><span>Decision</span><b id="sumDecision">—</b></div><div class="metric"><span>Live Data</span><b>Kotak Neo + TradingView</b></div><div class="metric"><span>News</span><b>Google News RSS</b></div><div class="metric"><span>Data Confidence</span><b id="sumConf">—</b></div></div>
+  </div>
 
-            const API_URL = 'http://127.0.0.1:8000';
+  <div class="featuregrid">
+    <div class="feature"><div class="bigicon">👥</div><h3>Peer Comparison</h3><p>Compare with industry peers side by side.</p><button onclick="page('compare')">Compare Now</button></div>
+    <div class="feature"><div class="bigicon">🔽</div><h3>Stock Screener</h3><p>Find best stocks using advanced filters.</p><button onclick="page('screener')">Open Screener</button></div>
+    <div class="feature"><div class="bigicon">💼</div><h3>Portfolio Analyzer</h3><p>Track performance, P/L, allocation & risk.</p><button onclick="page('portfolio')">Analyze Portfolio</button></div>
+    <div class="feature"><div class="bigicon">📈</div><h3>Score History</h3><p>See historical score movement over time.</p><button onclick="page('history')">View History</button></div>
+    <div class="feature"><div class="bigicon">🔔</div><h3>Alerts</h3><p>Get notified on score & price movements.</p><button onclick="page('alerts')">Manage Alerts</button></div>
+    <div class="feature"><div class="bigicon">▤</div><h3>Daily Market Report</h3><p>Get daily top picks, trends & insights.</p><button onclick="page('news')">View Report</button></div>
+  </div>
+  <div class="disclaimer">Disclaimer: StockMeter is an analytical tool and not a financial advisor. All data is for informational purposes only. Please do your own research before investing.</div>
+</section>
 
-            // Utility: Headers Maker
-            const getHeaders = () => ({
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('sm_token')}`
-            });
+<section id="analyze" class="page content"><div class="card toolcard"><h2>Analyze Stock</h2><div class="toolinput"><input id="anInput" value="TCS" placeholder="TCS, RELIANCE, INFY"><button onclick="analyzeFrom('anInput')">Analyze</button></div></div></section>
+<section id="compare" class="page content"><div class="card toolcard"><h2>Peer Comparison <span class="badge">PRO</span></h2><p class="meta">Enter comma-separated NSE symbols.</p><div class="toolinput"><input id="cmpInput" value="TCS,INFY,HDFCBANK,RELIANCE"><button onclick="compareStocks()">Compare</button></div><div id="cmpResult" class="result"></div></div></section>
+<section id="screener" class="page content"><div class="card toolcard"><h2>Stock Screener <span class="badge">PRO</span></h2><p class="meta">Enter symbols. Minimum score is optional.</p><div class="toolinput"><input id="scrInput" value="TCS,INFY,RELIANCE,HDFCBANK,ICICIBANK,LT"><input id="minScore" style="max-width:130px" placeholder="Min score"><button onclick="screenStocks()">Screen</button></div><div id="scrResult" class="result"></div></div></section>
+<section id="portfolio" class="page content"><div class="card toolcard"><h2>Portfolio Analyzer <span class="badge gold">PREMIUM</span></h2><p class="meta">Format: TCS:10:3000,INFY:20:1400</p><div class="toolinput"><input id="portInput" value="TCS:10:3000,INFY:20:1400"><button onclick="analyzePortfolio()">Analyze</button></div><div id="portResult" class="result"></div></div></section>
+<section id="history" class="page content"><div class="card toolcard"><h2>Score History <span class="badge">PRO</span></h2><div class="toolinput"><input id="histInput" value="TCS"><button onclick="loadHistory()">Load</button></div><div id="histResult" class="result"></div></div></section>
+<section id="alerts" class="page content"><div class="card toolcard"><h2>Alerts <span class="badge">PRO</span></h2><p class="meta">Check a stock against a score threshold.</p><div class="toolinput"><input id="alertInput" value="TCS"><input id="alertScore" placeholder="Min score" style="max-width:150px"><button onclick="checkAlert()">Check</button></div><div id="alertResult" class="result"></div></div></section>
+<section id="news" class="page content"><div class="card toolcard"><h2>Market News <span class="badge new">NEW</span></h2><div class="toolinput"><input id="newsInput" value="Indian stock market"><button onclick="loadNews(document.getElementById('newsInput').value,true)">Refresh</button></div><div id="newsFull" class="result"></div></div></section>
+<section id="watchlist" class="page content"><div class="card toolcard"><h2>My Watchlist</h2><p class="meta">Saved locally in this browser.</p><div id="watchFull"></div></div></section>
+<section id="reports" class="page content"><div class="card toolcard"><h2>My Reports</h2><p>Use Score History and Market News to build your analysis report.</p></div></section>
+<section id="how" class="page content"><div class="card toolcard"><h2>How It Works</h2><ol><li>Kotak Neo supplies live market price after login.</li><li>TradingView supplies financial/technical inputs.</li><li>StockMeter combines Fundamental, Technical, Valuation and Risk scores into a 100-point score.</li><li>The result is informational and not investment advice.</li></ol></div></section>
+</main></div>
 
-            // 1. SESSION MANAGEMENT ----------------------------------
-            const checkSession = async () => {
-                const token = localStorage.getItem('sm_token');
-                if(!token) { 
-                    modal.classList.remove('hidden'); 
-                    logoutBtnSide.classList.add('hidden');
-                    return false; 
-                }
-                try {
-                    const res = await fetch(`${API_URL}/api/session`, { headers: getHeaders() });
-                    const data = await res.json();
-                    if(!data.logged_in) throw new Error();
-                    
-                    modal.classList.add('hidden');
-                    logoutBtnSide.classList.remove('hidden');
-                    return true;
-                } catch(e) {
-                    localStorage.removeItem('sm_token');
-                    modal.classList.remove('hidden');
-                    logoutBtnSide.classList.add('hidden');
-                    return false;
-                }
-            };
-            
-            // Initial check
-            await checkSession();
+<div id="loginModal" class="modal"><div class="modalbox"><h3>🔐 Kotak Neo Login</h3><p class="meta">Enter your current 6-digit TOTP. Your broker credentials remain on the server environment.</p><input id="totp" maxlength="6" inputmode="numeric" placeholder="6-digit TOTP"><div id="loginErr" style="color:#dc2626;font-size:11px;margin-top:7px"></div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:15px"><button onclick="closeLogin()">Cancel</button><button class="loginmain" onclick="doLogin()">Login</button></div></div></div>
 
-            // 2. LOGIN LOGIC -----------------------------------------
-            loginBtn.addEventListener('click', async () => {
-                const totp = totpInput.value.trim();
-                if(totp.length !== 6) return alert("Please enter a 6-digit TOTP code.");
-                
-                const originalText = loginBtn.innerHTML;
-                loginBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Connecting...';
-                loginBtn.disabled = true;
+<script>
+let sessionId=localStorage.getItem("sm_session")||"", pending="", current="TCS";
+let watchlist=JSON.parse(localStorage.getItem("sm_watchlist")||'["TCS","RELIANCE","INFY","HDFCBANK","LT"]');
 
-                try {
-                    const res = await fetch(`${API_URL}/api/login`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ totp })
-                    });
-                    const data = await res.json();
-                    
-                    if(res.ok && data.token) {
-                        localStorage.setItem('sm_token', data.token);
-                        modal.classList.add('hidden');
-                        logoutBtnSide.classList.remove('hidden');
-                        totpInput.value = '';
-                    } else {
-                        alert(`Login failed: ${data.detail}`);
-                    }
-                } catch(e) { 
-                    alert("Cannot reach the backend server. Is app.py running?"); 
-                }
-                
-                loginBtn.innerHTML = originalText;
-                loginBtn.disabled = false;
-            });
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+const fmt=v=>v==null||v===""||Number.isNaN(Number(v))?"—":Number(v).toLocaleString("en-IN",{maximumFractionDigits:2});
+const pct=v=>v==null||Number.isNaN(Number(v))?"—":Number(v).toFixed(2)+"%";
 
-            // LOGOUT
-            logoutBtnSide.addEventListener('click', async () => {
-                try {
-                    await fetch(`${API_URL}/api/logout`, { method: 'POST', headers: getHeaders() });
-                } catch(e) {}
-                localStorage.removeItem('sm_token');
-                window.location.reload();
-            });
+function page(id,btn){document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));$(id)?.classList.add("active");if(btn){document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));btn.classList.add("active")}if(id==="news")loadNews();if(id==="watchlist")renderWatch();if(id==="history")loadHistory()}
 
-            // 3. ANALYZE BUTTON LOGIC --------------------------------
-            analyzeBtn.addEventListener('click', async () => {
-                if(!await checkSession()) return;
-                
-                const symbol = searchInput.value.trim().toUpperCase();
-                if(!symbol) return alert("Please enter a stock symbol.");
+function openLogin(){ $("loginModal").style.display="flex";$("totp").value="";$("loginErr").textContent="";setTimeout(()=>$("totp").focus(),50)}
+function closeLogin(){ $("loginModal").style.display="none" }
 
-                analyzeBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-                analyzeBtn.disabled = true;
+async function doLogin(){
+ const totp=$("totp").value.trim(); if(!/^\d{6}$/.test(totp)){ $("loginErr").textContent="Enter exactly 6 digits.";return}
+ try{const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({totp})});const d=await r.json();if(!r.ok)throw Error(d.detail||"Login failed");sessionId=d.session_id;localStorage.setItem("sm_session",sessionId);closeLogin();if(pending){let s=pending;pending="";analyze(s)}}catch(e){$("loginErr").textContent=e.message}}
+async function api(url,opt={}){let h=new Headers(opt.headers||{});if(sessionId)h.set("X-StockMeter-Session",sessionId);let r=await fetch(url,{...opt,headers:h});let d=await r.json().catch(()=>({}));if(r.status===401){sessionId="";localStorage.removeItem("sm_session");throw Object.assign(Error("LOGIN_REQUIRED"),{login:true})}if(!r.ok)throw Error(d.detail||"Request failed");return d}
 
-                try {
-                    const res = await fetch(`${API_URL}/api/score`, {
-                        method: 'POST',
-                        headers: getHeaders(),
-                        body: JSON.stringify({ company: symbol })
-                    });
-                    
-                    if(res.status === 401) {
-                        await checkSession(); // Will trigger modal
-                        throw new Error("Session expired");
-                    }
+function runAnalyze(){analyze($("globalSearch").value)}
+function analyzeFrom(id){analyze($(id).value);page("dashboard")}
+async function analyze(symbol){
+ symbol=(symbol||"").trim().toUpperCase();if(!symbol)return;current=symbol;
+ try{let d=await api("/api/score",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({company:symbol})});render(d);page("dashboard")}
+ catch(e){if(e.login){pending=symbol;openLogin()}else alert("Analysis error: "+e.message)}}
 
-                    const data = await res.json();
-                    
-                    if(res.ok) {
-                        // MAP REAL DATA TO UI
-                        uiTitle.innerText = data.symbol;
-                        uiSymbol.innerHTML = `NSE <span class="mx-2 text-gray-300">|</span> Live Data`;
-                        uiLogo.innerText = data.symbol.substring(0,2);
-                        
-                        // Price & Score
-                        uiPrice.innerText = `₹${data.ltp.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                        uiScore.innerText = data.score;
-                        
-                        // Score Ring Calculation (283 is full circle)
-                        const offset = 283 - (283 * (data.score / 100));
-                        uiScoreRing.style.strokeDashoffset = offset;
-                        
-                        // Decision Button Styling
-                        uiDecisionBtn.className = 'px-8 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 shadow-md text-white transition';
-                        if(data.decision === 'STRONG BUY' || data.decision === 'BUY') {
-                            uiDecisionBtn.classList.add('bg-brand-green');
-                            uiDecisionBtn.innerHTML = `<i class="fa-solid fa-arrow-trend-up"></i> ${data.decision}`;
-                        } else if(data.decision === 'HOLD') {
-                            uiDecisionBtn.classList.add('bg-yellow-500');
-                            uiDecisionBtn.innerHTML = `<i class="fa-solid fa-hand"></i> HOLD`;
-                        } else {
-                            uiDecisionBtn.classList.add('bg-red-500');
-                            uiDecisionBtn.innerHTML = `<i class="fa-solid fa-arrow-trend-down"></i> AVOID`;
-                        }
-                        
-                        // Valuation Metrics
-                        const fv = data.fair_value_analysis;
-                        uiFairValue.innerText = fv.fair_value ? `₹${fv.fair_value}` : 'N/A';
-                        uiUpside.innerText = fv.upside_potential_pct ? `${fv.upside_potential_pct}%` : 'N/A';
-                        uiBuyZone.innerText = fv.buy_zone || 'N/A';
-                        uiMargin.innerText = fv.margin_of_safety_pct ? `${fv.margin_of_safety_pct}%` : 'N/A';
-                        
-                        // Upside color logic
-                        uiUpside.className = 'text-sm font-bold ' + (fv.upside_potential_pct > 0 ? 'text-brand-green' : 'text-red-500');
-                        uiMargin.className = 'text-sm font-bold ' + (fv.margin_of_safety_pct > 0 ? 'text-brand-green' : 'text-red-500');
+function render(d){
+ const sym=d.symbol||current,b=d.breakdown||{},f=d.fair_value_analysis||{};
+ $("logo").textContent=sym.slice(0,3);$("company").textContent=d.company||sym;$("symbol").textContent=sym;$("price").textContent="₹"+fmt(d.ltp);$("score").innerHTML=fmt(d.score)+'<small>/100</small>';$("decision").textContent=d.decision||"—";$("fair").textContent=f.fair_value!=null?"₹"+fmt(f.fair_value):"—";$("upside").textContent=pct(f.upside_pct);$("zone").textContent=f.buy_zone||"—";$("mos").textContent=pct(f.margin_of_safety_pct);$("conf").textContent=(d.data_confidence_pct??"—")+"%";$("confline").style.width=Math.min(100,Number(d.data_confidence_pct||0))+"%";$("sumDecision").textContent=d.decision||"—";$("sumConf").textContent=(d.data_confidence_pct??"—")+"%";
+ [["fscore","fp","fundamental",40],["tscore","tp","technical",25],["vscore","vp","valuation",20],["rscore","rp","risk",15]].forEach(x=>{let q=b[x[2]]||{};$(x[0]).textContent=(q.score??"—")+"/"+x[3];$(x[1]).style.width=((q.score||0)/x[3]*100)+"%"});
+ renderBreak(b);renderWatch();
+}
+function renderBreak(b){
+ $("breakdown").innerHTML=["fundamental","technical","valuation","risk"].map(k=>{let q=b[k]||{},rows=Object.entries(q.data||{}).slice(0,6).map(([a,v])=>`<div class="metric"><span>${esc(a.replaceAll("_"," "))}</span><b>${esc(fmt(v))}</b></div>`).join("");let c={fundamental:"blue",technical:"green",valuation:"purple",risk:"orange"}[k];return `<div class="bd"><h4 class="${c}">${k.toUpperCase()} (${q.score??0}/${q.max??0})</h4>${rows||'<div class="meta">No detailed data</div>'}${(q.positives||[]).slice(0,2).map(x=>`<div style="font-size:9px;color:#079b53;margin-top:4px">✓ ${esc(x)}</div>`).join("")}${(q.warnings||[]).slice(0,2).map(x=>`<div style="font-size:9px;color:#d97706;margin-top:4px">⚠ ${esc(x)}</div>`).join("")}<a class="details">View Details →</a></div>`}).join("")
+}
 
-                        // Confidence
-                        uiConfidenceTxt.innerText = `${data.data_confidence_pct}%`;
-                        uiConfidenceBar.style.width = `${data.data_confidence_pct}%`;
+function toggleWatch(){if(!watchlist.includes(current))watchlist.push(current);else watchlist=watchlist.filter(x=>x!==current);localStorage.setItem("sm_watchlist",JSON.stringify(watchlist));renderWatch()}
+function renderWatch(){ $("watchMini").innerHTML=watchlist.map(s=>`<div class="watchrow"><span>★ ${esc(s)}</span><span>—</span><b class="right">—</b></div>`).join("");$("watchFull").innerHTML=watchlist.map(s=>`<button style="margin:5px;padding:8px;border:1px solid #dbe2ea;background:#fff;border-radius:6px;cursor:pointer" onclick="analyze('${esc(s)}')">★ ${esc(s)}</button>`).join("")}
 
-                        // Breakdown Scores
-                        uiFundScore.innerText = data.breakdown.fundamental.score;
-                        uiTechScore.innerText = data.breakdown.technical.score;
-                        uiValScore.innerText = data.breakdown.valuation.score;
-                        uiRiskScore.innerText = data.breakdown.risk.score;
+async function loadNews(q="Indian stock market",full=false){
+ try{let d=await api("/api/news?q="+encodeURIComponent(q)+"&limit=8");let h=(d.items||[]).map(x=>`<div class="newsitem"><div class="thumb">📰</div><div><b>${esc(x.title)}</b><div class="meta">${esc(x.published)} • ${esc(x.source)}</div></div></div>`).join("")||'<div class="meta">No news available.</div>';if(full||$("newsFull"))$("newsFull").innerHTML=h;if($("newsMini"))$("newsMini").innerHTML=h}catch(e){$("newsMini").innerHTML='<div class="meta">Market news temporarily unavailable.</div>'}}
 
-                        // Insights (Positives & Warnings)
-                        uiInsights.innerHTML = '';
-                        data.why_buy.forEach(msg => {
-                            uiInsights.innerHTML += `<div class="flex items-start gap-2"><i class="fa-solid fa-check text-brand-green mt-0.5"></i><span class="text-gray-700">${msg}</span></div>`;
-                        });
-                        data.risk_warnings.forEach(msg => {
-                            uiInsights.innerHTML += `<div class="flex items-start gap-2"><i class="fa-solid fa-triangle-exclamation text-orange-500 mt-0.5"></i><span class="text-gray-700">${msg}</span></div>`;
-                        });
-                        if(data.why_buy.length === 0 && data.risk_warnings.length === 0) {
-                            uiInsights.innerHTML = `<p class="text-gray-500 text-xs italic">No specific insights generated.</p>`;
-                        }
+function table(rows,headers){return `<table class="table"><tr>${headers.map(x=>`<th>${x}</th>`).join("")}</tr>${rows.join("")}</table>`}
+async function compareStocks(){try{let syms=$("cmpInput").value.split(",").map(x=>x.trim()).filter(Boolean);let d=await api("/api/compare",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({symbols:syms})});$("cmpResult").innerHTML=table((d.results||[]).map(x=>`<tr><td>${esc(x.symbol)}</td><td>${fmt(x.ltp)}</td><td>${x.score}/100</td><td>${esc(x.decision)}</td></tr>`),["Stock","Price","Score","Decision"])}catch(e){if(e.login)openLogin();else alert(e.message)}}
+async function screenStocks(){try{let syms=$("scrInput").value.split(",").map(x=>x.trim()).filter(Boolean);let ms=$("minScore").value.trim();let body={symbols:syms};if(ms)body.min_score=Number(ms);let d=await api("/api/screener",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});$("scrResult").innerHTML=table((d.results||[]).map(x=>`<tr><td>${esc(x.symbol)}</td><td>₹${fmt(x.ltp)}</td><td>${x.score}</td><td>${esc(x.decision)}</td></tr>`),["Stock","Price","Score","Decision"])}catch(e){if(e.login)openLogin();else alert(e.message)}}
+async function analyzePortfolio(){try{let hs=$("portInput").value.split(",").map(x=>{let a=x.trim().split(":");return{symbol:a[0],quantity:Number(a[1]),avg_price:Number(a[2])}}).filter(x=>x.symbol&&x.quantity>0);let d=await api("/api/portfolio",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({holdings:hs})});$("portResult").innerHTML=`<p><b>Invested:</b> ₹${fmt(d.total_invested)} &nbsp; <b>Value:</b> ₹${fmt(d.total_value)} &nbsp; <b>P/L:</b> ₹${fmt(d.pnl)} (${pct(d.pnl_pct)}) &nbsp; <b>Score:</b> ${fmt(d.portfolio_score)}</p>`+table((d.rows||[]).map(x=>`<tr><td>${esc(x.symbol)}</td><td>${x.quantity}</td><td>₹${fmt(x.ltp)}</td><td>₹${fmt(x.pnl)}</td><td>${x.score}</td></tr>`),["Stock","Qty","LTP","P/L","Score"])}catch(e){if(e.login)openLogin();else alert(e.message)}}
+async function loadHistory(){try{let s=$("histInput")?.value||"TCS";let d=await api("/api/history?symbol="+encodeURIComponent(s));$("histResult").innerHTML=table((d.items||[]).map(x=>`<tr><td>${esc(new Date(x.time).toLocaleString())}</td><td>${esc(x.symbol)}</td><td>${x.score}</td><td>${esc(x.decision)}</td><td>₹${fmt(x.ltp)}</td></tr>`),["Time","Stock","Score","Decision","LTP"])}catch(e){if(e.login)openLogin();else alert(e.message)}}
+async function checkAlert(){try{let body={symbol:$("alertInput").value};if($("alertScore").value)body.min_score=Number($("alertScore").value);let d=await api("/api/alerts/check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});$("alertResult").innerHTML=`<div class="card" style="padding:15px"><b>${d.triggered?"🔔 Alert Triggered":"✓ No Alert"}</b><br>${esc(d.symbol)} — Score ${d.score}/100 — ₹${fmt(d.ltp)}<br><small>${esc((d.reasons||[]).join(", "))}</small></div>`}catch(e){if(e.login)openLogin();else alert(e.message)}}
 
-                    } else {
-                        alert(`Error: ${data.detail || 'Failed to fetch data'}`);
-                    }
-                } catch(e) {
-                    console.error(e);
-                }
-                
-                analyzeBtn.innerHTML = 'Analyze';
-                analyzeBtn.disabled = false;
-            });
-
-            // Trigger on Enter key
-            searchInput.addEventListener('keypress', (e) => {
-                if(e.key === 'Enter') analyzeBtn.click();
-            });
-        });
-    </script>
-</body>
-</html>
+renderWatch();loadNews();analyze("TCS");
+</script>
+</body></html>
