@@ -1,5 +1,7 @@
 import os
 import math
+import time
+import random
 from pathlib import Path
 import json
 
@@ -22,15 +24,16 @@ load_dotenv()
 
 app = FastAPI(title="StockScore Live - 100pt Model")
 
-# Global session with browser headers to avoid yfinance rate limiting
-yf_session = requests.Session()
-yf_session.headers.update({
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-})
-
 neo = None
 logged_in = False
 
+# List of multiple User-Agents to bypass Yahoo Finance rate limits
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+]
 
 # =========================================================
 # REQUEST MODELS
@@ -39,10 +42,8 @@ logged_in = False
 class LoginRequest(BaseModel):
     totp: str
 
-
 class StockRequest(BaseModel):
     company: str
-
 
 # =========================================================
 # HELPER FUNCTIONS
@@ -59,7 +60,6 @@ def num(v):
     except Exception:
         return None
 
-
 def clean_token(val):
     if val is None:
         return None
@@ -68,19 +68,43 @@ def clean_token(val):
     except (ValueError, TypeError):
         return str(val).strip()
 
+def fetch_yfinance_with_retry(symbol, max_retries=3):
+    """
+    Fetches Yahoo Finance data with User-Agent rotation and exponential backoff 
+    to handle '429 Too Many Requests' errors.
+    """
+    last_exception = None
+    
+    for attempt in range(max_retries):
+        try:
+            # Rotate session & User-Agent per attempt
+            session = requests.Session()
+            session.headers.update({
+                'User-Agent': random.choice(USER_AGENTS),
+                'Accept': '*/*',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive'
+            })
+            
+            t = yf.Ticker(symbol + ".NS", session=session)
+            info = t.info or {}
+            hist = t.history(period="1y", auto_adjust=False)
+            
+            return t, info, hist
+            
+        except Exception as e:
+            last_exception = e
+            # Exponential backoff: Wait 2s, then 4s, then 8s before retrying
+            time.sleep(2 ** (attempt + 1))
+            
+    raise last_exception
 
 def extract_fallback_metrics(t: yf.Ticker, info: dict):
-    """
-    Fallback extractor for NSE metrics missing in yfinance .info
-    Calculates Current Ratio, FCF, ROE, Earnings Growth, and PEG directly
-    from financial statements DataFrames.
-    """
     bs = getattr(t, "balance_sheet", pd.DataFrame())
     cf = getattr(t, "cashflow", pd.DataFrame())
     fin = getattr(t, "financials", pd.DataFrame())
     q_fin = getattr(t, "quarterly_financials", pd.DataFrame())
 
-    # 1. Current Ratio Fallback
     current_ratio = num(info.get("currentRatio"))
     if current_ratio is None and not bs.empty:
         try:
@@ -91,19 +115,16 @@ def extract_fallback_metrics(t: yf.Ticker, info: dict):
         except Exception:
             pass
 
-    # 2. Free Cash Flow (FCF) Fallback
     fcf = num(info.get("freeCashflow"))
     if fcf is None and not cf.empty:
         try:
             ocf = num(cf.loc["Operating Cash Flow"].iloc[0]) if "Operating Cash Flow" in cf.index else None
             capex = num(cf.loc["Capital Expenditure"].iloc[0]) if "Capital Expenditure" in cf.index else 0
             if ocf is not None:
-                # Capex is usually reported as negative in yfinance
                 fcf = ocf + capex if capex < 0 else ocf - capex
         except Exception:
             pass
 
-    # 3. ROE Fallback
     roe = num(info.get("returnOnEquity"))
     if roe is None and not fin.empty and not bs.empty:
         try:
@@ -114,7 +135,6 @@ def extract_fallback_metrics(t: yf.Ticker, info: dict):
         except Exception:
             pass
 
-    # 4. Earnings Growth Fallback (YoY Quarterly Growth)
     eg = num(info.get("earningsGrowth"))
     if eg is None and not q_fin.empty and q_fin.shape[1] >= 5:
         try:
@@ -127,7 +147,6 @@ def extract_fallback_metrics(t: yf.Ticker, info: dict):
         except Exception:
             pass
 
-    # 5. PEG Ratio Fallback
     peg = num(info.get("pegRatio"))
     pe = num(info.get("trailingPE"))
     if peg is None and pe and eg and eg > 0:
@@ -204,13 +223,11 @@ def login_neo(totp):
 
 
 # =========================================================
-# FIND NSE STOCK (UPDATED MATCHING LOGIC & BLOCK DEAL FILTER)
+# FIND NSE STOCK
 # =========================================================
 
 def find_stock(symbol):
     symbol = symbol.upper().strip()
-    print(f"\n--- Searching Kotak Neo for: '{symbol}' ---")
-    
     queries_to_try = [f"{symbol}-EQ", symbol]
     segments_to_try = ["nse_cm", "NSE", "bse_cm", "BSE"]
     
@@ -249,13 +266,11 @@ def find_stock(symbol):
                 if items:
                     valid_items.extend(items)
             except Exception as e:
-                print(f"[SEARCH ERROR] seg='{seg}', query='{q}': {e}")
+                pass
 
     if not valid_items:
-        print(f"[SEARCH FAILED] No response from Kotak Neo for '{symbol}'")
         return None
 
-    # Deduplicate results
     unique_items = []
     seen = set()
     for item in valid_items:
@@ -281,14 +296,12 @@ def find_stock(symbol):
 
     target_eq = f"{symbol}-EQ"
 
-    # Pass 1: Strict Exact Match for Main Equity Trading Symbol (SYMBOL-EQ)
     for item in unique_items:
         token = get_token(item)
         trd_sym = get_trd_sym(item)
         exch = get_exch(item)
 
         if token and trd_sym == target_eq:
-            print(f"[MATCH FOUND - Pass 1 (Exact EQ)] {trd_sym} | Token: {token} | Exch: {exch}")
             return {
                 "pSymbolName": symbol,
                 "pTrdSymbol": trd_sym,
@@ -296,7 +309,6 @@ def find_stock(symbol):
                 "pExchSeg": exch if "nse" in exch else "nse_cm"
             }
 
-    # Pass 2: Fallback Exact Match on Symbol / Symbol Name (Excluding Derivatives & Block Deals)
     for item in unique_items:
         token = get_token(item)
         trd_sym = get_trd_sym(item)
@@ -306,7 +318,6 @@ def find_stock(symbol):
         is_non_equity = any(trd_sym.endswith(ext) or ext in trd_sym for ext in ("-BL", "-FUT", "-CE", "-PE", "-N1", "-N2", "-E1", "-BE", "-BZ"))
 
         if token and not is_non_equity and (trd_sym == symbol or sym_name == symbol):
-            print(f"[MATCH FOUND - Pass 2 (Clean Symbol)] {trd_sym} | Token: {token} | Exch: {exch}")
             return {
                 "pSymbolName": symbol,
                 "pTrdSymbol": trd_sym,
@@ -314,7 +325,6 @@ def find_stock(symbol):
                 "pExchSeg": exch if "nse" in exch else "nse_cm"
             }
 
-    # Pass 3: General Cash Market Equity Fallback
     for item in unique_items:
         token = get_token(item)
         trd_sym = get_trd_sym(item)
@@ -324,7 +334,6 @@ def find_stock(symbol):
         is_non_equity = any(trd_sym.endswith(ext) or ext in trd_sym for ext in ("-BL", "-FUT", "-CE", "-PE", "-N1", "-N2", "-E1"))
 
         if token and not is_non_equity and (symbol in trd_sym or symbol in sym_name):
-            print(f"[MATCH FOUND - Pass 3 (Fallback)] {trd_sym} | Token: {token} | Exch: {exch}")
             return {
                 "pSymbolName": symbol,
                 "pTrdSymbol": trd_sym,
@@ -332,9 +341,7 @@ def find_stock(symbol):
                 "pExchSeg": exch if "nse" in exch else "nse_cm"
             }
 
-    print(f"[SEARCH FAILED] No valid main equity token extracted for '{symbol}'")
     return None
-
 
 # =========================================================
 # INTELLIGENT 100-POINT SCORING ENGINE
@@ -347,7 +354,6 @@ def calculate_rsi(close, n=14):
     rs = gain / loss.replace(0, pd.NA)
     result = 100 - (100 / (1 + rs))
     return num(result.iloc[-1])
-
 
 def analyze_fundamentals(info, ticker):
     pts = 0
@@ -476,7 +482,6 @@ def analyze_fundamentals(info, ticker):
         }
     }
 
-
 def analyze_technicals(hist):
     if hist is None or hist.empty or len(hist) < 50:
         return {"score": 0, "max": 25, "confidence": 0.0, "positives": [], "warnings": [], "data": {}}
@@ -569,7 +574,6 @@ def analyze_technicals(hist):
         }
     }
 
-
 def analyze_valuation(info, ticker):
     positives = []
     warnings = []
@@ -634,7 +638,6 @@ def analyze_valuation(info, ticker):
             "fcf_yield_pct": round((fcf / mcap) * 100, 2) if (fcf and mcap) else None
         }
     }
-
 
 def analyze_risk(info, hist, ticker):
     positives = []
@@ -721,7 +724,6 @@ def calculate_fair_value(info, ltp):
         "valuation_status": "Neutral"
     }
 
-
 def make_decision(total_score, f_score, t_score, warnings):
     critical_warnings = len([w for w in warnings if "high" in w.lower() or "contraction" in w.lower()])
 
@@ -744,11 +746,9 @@ def home():
     frontend = (Path(__file__).parent / "../frontend/index.html").resolve()
     return FileResponse(str(frontend))
 
-
 @app.post("/api/login")
 def api_login(x: LoginRequest):
     return login_neo(x.totp)
-
 
 @app.post("/api/score")
 def api_score(x: StockRequest):
@@ -770,7 +770,6 @@ def api_score(x: StockRequest):
             "lastTradedPrice", "last_traded_price",
             "pLtp", "pLTP", "lp"
         )
-
         def walk(value):
             if isinstance(value, dict):
                 for key in preferred_keys:
@@ -778,26 +777,21 @@ def api_score(x: StockRequest):
                         n = num(value.get(key))
                         if n is not None and n > 0:
                             return n
-
                 for key in ("data", "result", "quotes", "quote", "response"):
                     if key in value:
                         found = walk(value[key])
                         if found is not None:
                             return found
-
                 for child in value.values():
                     found = walk(child)
                     if found is not None:
                         return found
-
             elif isinstance(value, list):
                 for child in value:
                     found = walk(child)
                     if found is not None:
                         return found
-
             return None
-
         return walk(obj)
 
     token = clean_token(stock.get("pSymbol"))
@@ -822,15 +816,15 @@ def api_score(x: StockRequest):
     if ltp is None:
         raise HTTPException(status_code=502, detail="Unable to retrieve live LTP from Kotak Neo.")
 
+    # --- Updated Yahoo Finance Fetch Block ---
     try:
-        t = yf.Ticker(symbol + ".NS", session=yf_session)
-        info = t.info or {}
-        hist = t.history(period="1y", auto_adjust=False)
+        t, info, hist = fetch_yfinance_with_retry(symbol)
     except Exception as e:
         raise HTTPException(
             status_code=502,
-            detail=f"Yahoo Finance data fetch error: {str(e)}"
+            detail=f"Yahoo Finance data fetch error: Too Many Requests. Rate limited. Detail: {str(e)}"
         )
+    # -----------------------------------------
 
     f_res = analyze_fundamentals(info, t)
     t_res = analyze_technicals(hist)
