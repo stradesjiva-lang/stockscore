@@ -2,6 +2,7 @@ import os
 import math
 import secrets
 import time
+import asyncio
 from pathlib import Path
 import json
 import requests
@@ -11,7 +12,7 @@ from urllib.parse import quote_plus
 from typing import List, Optional, Dict, Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -128,7 +129,7 @@ def fetch_tradingview_data(symbol):
     payload = {
         "symbols": {"tickers": [ticker]},
         "columns": [
-            "close", "volume",
+            "close", "change", "change_abs", "volume",
             "price_earnings_ttm", "price_book_fq", "price_book_ratio",
             "return_on_equity", "debt_to_equity_fq", "debt_to_equity",
             "total_revenue_yoy_growth", "revenue_growth_yoy",
@@ -615,6 +616,180 @@ def score_from_tv(symbol, tv_data, ltp):
     }
 
 
+
+# =========================================================
+# REAL-TIME KOTAK NEO MARKET STREAM
+# =========================================================
+
+def extract_live_tick(message):
+    """Normalize common Kotak Neo websocket tick shapes into a small payload."""
+    if isinstance(message, str):
+        try:
+            message = json.loads(message)
+        except Exception:
+            return None
+    if isinstance(message, list):
+        for item in message:
+            hit = extract_live_tick(item)
+            if hit:
+                return hit
+        return None
+    if not isinstance(message, dict):
+        return None
+
+    # SDK payloads can expose data directly or under data/result.
+    candidates = [message]
+    for key in ("data", "result", "response", "message"):
+        value = message.get(key)
+        if isinstance(value, (dict, list)):
+            candidates.append(value)
+
+    for obj in candidates:
+        if isinstance(obj, list):
+            for item in obj:
+                hit = extract_live_tick(item)
+                if hit:
+                    return hit
+            continue
+        if not isinstance(obj, dict):
+            continue
+
+        price = None
+        for k in ("ltp", "lastPrice", "last_traded_price", "pLtp", "LTP", "last_price"):
+            if k in obj and num(obj.get(k)) is not None:
+                price = num(obj.get(k)); break
+        if price is None:
+            continue
+
+        change = None
+        for k in ("change", "changePercent", "change_percentage", "change_pct", "pChange"):
+            if k in obj and num(obj.get(k)) is not None:
+                change = num(obj.get(k)); break
+
+        symbol = obj.get("trading_symbol") or obj.get("tradingSymbol") or obj.get("pTrdSymbol") or obj.get("symbol")
+        token = obj.get("instrument_token") or obj.get("instrumentToken") or obj.get("pSymbol")
+        return {
+            "type": "tick",
+            "symbol": str(symbol or "").replace("-EQ", "").upper(),
+            "token": clean_token(token) if token is not None else None,
+            "ltp": price,
+            "change_pct": change,
+            "raw_time": datetime.now(timezone.utc).isoformat()
+        }
+    return None
+
+@app.websocket("/ws/live")
+async def websocket_live(websocket: WebSocket):
+    """Stream live Kotak Neo ticks to the browser after the existing session login."""
+    await websocket.accept()
+    session_id = websocket.query_params.get("session", "").strip()
+    symbol = websocket.query_params.get("symbol", "").strip().upper()
+    if not session_id or session_id not in sessions:
+        await websocket.send_json({"type": "error", "message": "LOGIN_REQUIRED"})
+        await websocket.close(code=4401)
+        return
+    if not symbol:
+        await websocket.send_json({"type": "error", "message": "SYMBOL_REQUIRED"})
+        await websocket.close(code=4400)
+        return
+
+    session = sessions[session_id]
+    neo_client = session["neo"]
+    stock = find_stock(symbol, neo_client)
+    if not stock:
+        await websocket.send_json({"type": "error", "message": f"Stock '{symbol}' not found."})
+        await websocket.close(code=4404)
+        return
+
+    loop = asyncio.get_running_loop()
+    queue = asyncio.Queue(maxsize=100)
+
+    def on_message(message):
+        tick = extract_live_tick(message)
+        if tick:
+            try:
+                loop.call_soon_threadsafe(queue.put_nowait, tick)
+            except Exception:
+                pass
+
+    def on_error(error_message):
+        try:
+            loop.call_soon_threadsafe(queue.put_nowait, {
+                "type": "error", "message": str(error_message)
+            })
+        except Exception:
+            pass
+
+    try:
+        # Official SDK supports callbacks + subscribe() for live market feeds.
+        neo_client.on_message = on_message
+        neo_client.on_error = on_error
+        neo_client.on_close = lambda msg: None
+        neo_client.on_open = lambda msg: None
+        neo_client.subscribe(
+            instrument_tokens=[{
+                "instrument_token": clean_token(stock.get("pSymbol")),
+                "exchange_segment": stock.get("pExchSeg", "nse_cm").lower()
+            }],
+            isIndex=False,
+            isDepth=False
+        )
+
+        await websocket.send_json({
+            "type": "stream_status",
+            "status": "connected",
+            "symbol": symbol,
+            "source": "Kotak Neo WebSocket"
+        })
+
+        # Send an immediate snapshot so the UI does not wait for the first tick.
+        try:
+            snapshot = neo_client.quotes(
+                instrument_tokens=[{
+                    "instrument_token": clean_token(stock.get("pSymbol")),
+                    "exchange_segment": stock.get("pExchSeg", "nse_cm").lower()
+                }],
+                quote_type="ltp"
+            )
+            snap_ltp = extract_ltp(snapshot)
+            if snap_ltp is not None:
+                await websocket.send_json({
+                    "type": "tick", "symbol": symbol, "ltp": snap_ltp,
+                    "change_pct": None,
+                    "raw_time": datetime.now(timezone.utc).isoformat()
+                })
+        except Exception:
+            pass
+
+        while True:
+            try:
+                tick = await asyncio.wait_for(queue.get(), timeout=30)
+                await websocket.send_json(tick)
+            except asyncio.TimeoutError:
+                await websocket.send_json({
+                    "type": "heartbeat",
+                    "time": datetime.now(timezone.utc).isoformat()
+                })
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except Exception:
+            pass
+    finally:
+        try:
+            neo_client.un_subscribe(
+                instrument_tokens=[{
+                    "instrument_token": clean_token(stock.get("pSymbol")),
+                    "exchange_segment": stock.get("pExchSeg", "nse_cm").lower()
+                }],
+                isIndex=False,
+                isDepth=False
+            )
+        except Exception:
+            pass
+
 # =========================================================
 # ROUTES
 # =========================================================
@@ -673,6 +848,9 @@ def analyze_symbol(symbol: str, neo_client):
         raise HTTPException(status_code=502, detail=str(e))
 
     result = score_from_tv(symbol, tv_data, ltp)
+    result["price_change_pct"] = num(tv_data.get("change"))
+    result["price_change_abs"] = num(tv_data.get("change_abs"))
+    result["volume"] = num(tv_data.get("volume"))
     result["live_ltp_source"] = "Kotak Neo"
     result["market_data_source"] = "TradingView Scanner"
 
@@ -723,6 +901,33 @@ def api_login(x: LoginRequest):
 def api_score(x: StockRequest, request: Request):
     session = get_session(request)
     return analyze_symbol(x.company, session["neo"])
+
+@app.get("/api/market-overview")
+def api_market_overview():
+    """Current Indian market snapshot from TradingView scanner (no login required)."""
+    symbols = ["NSE:NIFTY", "NSE:BANKNIFTY", "BSE:SENSEX"]
+    payload = {
+        "symbols": {"tickers": symbols},
+        "columns": ["close", "change", "change_abs", "volume"]
+    }
+    try:
+        r = requests.post(
+            "https://scanner.tradingview.com/india/scan",
+            json=payload,
+            headers={"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"},
+            timeout=10,
+        )
+        r.raise_for_status()
+        data = r.json().get("data", [])
+        out = []
+        for row in data:
+            ticker = row.get("s", "")
+            vals = row.get("d", [])
+            item = dict(zip(payload["columns"], vals))
+            out.append({"symbol": ticker.split(":")[-1], "price": item.get("close"), "change_pct": item.get("change"), "change_abs": item.get("change_abs"), "volume": item.get("volume")})
+        return {"items": out, "updated_at": datetime.now(timezone.utc).isoformat()}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Market overview failed: {str(e)}")
 
 @app.get("/api/news")
 def api_news(q: str = "Indian stock market", limit: int = 5):
@@ -887,6 +1092,40 @@ def api_portfolio(x: PortfolioRequest, request: Request):
         "pnl_pct": round(pnl_pct, 2) if pnl_pct is not None else None,
         "portfolio_score": portfolio_score
     }
+
+
+@app.get("/api/account/holdings")
+def api_account_holdings(request: Request):
+    session = get_session(request)
+    try:
+        data = session["neo"].holdings("")
+        if isinstance(data, str):
+            data = json.loads(data)
+        return {"items": data.get("data", []) if isinstance(data, dict) else data}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Holdings fetch failed: {str(e)}")
+
+@app.get("/api/account/positions")
+def api_account_positions(request: Request):
+    session = get_session(request)
+    try:
+        data = session["neo"].positions()
+        if isinstance(data, str):
+            data = json.loads(data)
+        return {"items": data.get("data", []) if isinstance(data, dict) else data}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Positions fetch failed: {str(e)}")
+
+@app.get("/api/account/limits")
+def api_account_limits(request: Request):
+    session = get_session(request)
+    try:
+        data = session["neo"].limits(segment="ALL", exchange="ALL", product="ALL")
+        if isinstance(data, str):
+            data = json.loads(data)
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Limits fetch failed: {str(e)}")
 
 @app.get("/api/history")
 def api_history(symbol: Optional[str] = None, limit: int = 50, request: Request = None):
