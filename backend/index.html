@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StockScore Live</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#172033}
+.container{max-width:1100px;margin:0 auto;padding:24px}
+header{background:#101828;color:white;padding:22px 24px;border-radius:18px;margin-bottom:20px}
+header h1{margin:0 0 6px;font-size:30px}
+header p{margin:0;color:#cbd5e1}
+.card{background:white;border:1px solid #e5e7eb;border-radius:16px;padding:20px;margin-bottom:18px;box-shadow:0 4px 16px rgba(16,24,40,.06)}
+h2{margin:0 0 14px;font-size:20px}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+input,button{height:44px;border-radius:10px;border:1px solid #d0d5dd;padding:0 14px;font-size:15px}
+input{flex:1;min-width:180px}
+button{background:#175cd3;color:white;border:none;font-weight:600;cursor:pointer}
+button:hover{opacity:.92}
+button.secondary{background:#344054}
+.status{margin-top:10px;font-size:14px}
+.success{color:#067647}.error{color:#b42318}.muted{color:#667085}
+.hidden{display:none}
+.summary{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:14px}
+.metric{background:#f8fafc;border-radius:14px;padding:16px}
+.metric .label{font-size:13px;color:#667085;margin-bottom:6px}
+.metric .value{font-size:26px;font-weight:700}
+.scorebox{text-align:center;padding:24px;border-radius:16px;background:#f8fafc}
+.score{font-size:54px;font-weight:800}
+.decision{display:inline-block;padding:8px 16px;border-radius:999px;font-weight:700;margin-top:8px}
+.buy{background:#dcfae6;color:#067647}
+.strong{background:#abefc6;color:#05603a}
+.hold{background:#fef0c7;color:#b54708}
+.avoid{background:#fee4e2;color:#b42318}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.barrow{margin:12px 0}
+.barhead{display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px}
+.bar{height:10px;background:#eaecf0;border-radius:99px;overflow:hidden}
+.fill{height:100%;background:#175cd3;border-radius:99px}
+table{width:100%;border-collapse:collapse}
+td{padding:9px 4px;border-bottom:1px solid #eaecf0}
+td:first-child{color:#667085}
+.footer{font-size:12px;color:#667085;margin-top:18px}
+@media(max-width:750px){.summary,.grid{grid-template-columns:1fr 1fr}.summary .metric:first-child{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+  <h1>📊 StockScore Live</h1>
+  <p>Kotak Neo live price + fundamental + technical + valuation/risk analysis</p>
+</header>
+
+<div class="card">
+  <h2>🔐 Kotak Neo Login</h2>
+  <div class="row">
+    <input id="totp" type="password" maxlength="6" inputmode="numeric" placeholder="Enter 6-digit TOTP">
+    <button onclick="login()">Login to Kotak</button>
+  </div>
+  <div id="loginStatus" class="status muted">Not logged in</div>
+</div>
+
+<div class="card">
+  <h2>🔎 Analyze Stock</h2>
+  <div class="row">
+    <input id="company" placeholder="Enter NSE symbol e.g. TCS, INFY, RELIANCE">
+    <button onclick="analyze()">Analyze Stock</button>
+  </div>
+  <div id="scoreStatus" class="status muted"></div>
+</div>
+
+<div id="result" class="hidden">
+  <div class="summary">
+    <div class="metric">
+      <div class="label">Company</div>
+      <div class="value" id="companyName">-</div>
+      <div class="muted" id="symbol">-</div>
+    </div>
+    <div class="metric">
+      <div class="label">Live LTP</div>
+      <div class="value" id="ltp">-</div>
+    </div>
+    <div class="metric">
+      <div class="label">StockScore</div>
+      <div class="value" id="score">-</div>
+    </div>
+    <div class="metric">
+      <div class="label">Decision</div>
+      <div id="decision" class="decision">-</div>
+    </div>
+  </div>
+
+  <div class="grid" style="margin-top:18px">
+    <div class="card">
+      <h2>Fundamental — <span id="fundScore">0/40</span></h2>
+      <div id="fundBars"></div>
+    </div>
+    <div class="card">
+      <h2>Technical — <span id="techScore">0/30</span></h2>
+      <table id="techTable"></table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Valuation & Risk — <span id="valScore">0/30</span></h2>
+    <table id="valTable"></table>
+  </div>
+
+  <div class="footer" id="note"></div>
+</div>
+</div>
+
+<script>
+async function api(url, options){
+  const r = await fetch(url, options);
+  let data = {};
+  try { data = await r.json(); } catch(e) {}
+  if(!r.ok){
+    throw new Error(data.detail || data.message || ("HTTP " + r.status));
+  }
+  return data;
+}
+
+function setStatus(id,msg,ok=false){
+  const el=document.getElementById(id);
+  el.textContent=msg;
+  el.className="status "+(ok?"success":"error");
+}
+
+async function login(){
+  const totp=document.getElementById("totp").value.trim();
+  if(!/^\d{6}$/.test(totp)){
+    setStatus("loginStatus","Enter exactly 6 digits.");
+    return;
+  }
+  try{
+    const data=await api("/api/login",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({totp})
+    });
+    setStatus("loginStatus","✅ "+data.message,true);
+    document.getElementById("totp").value="";
+  }catch(e){
+    setStatus("loginStatus","❌ "+e.message);
+  }
+}
+
+function decisionClass(d){
+  if(d==="STRONG BUY") return "decision strong";
+  if(d==="BUY") return "decision buy";
+  if(d==="HOLD") return "decision hold";
+  return "decision avoid";
+}
+
+function money(v){
+  return "₹"+Number(v).toLocaleString("en-IN",{maximumFractionDigits:2});
+}
+function pct(v){
+  return v==null ? "N/A" : Number(v).toFixed(2)+"%";
+}
+function val(v){
+  return v==null ? "N/A" : Number(v).toLocaleString("en-IN",{maximumFractionDigits:2});
+}
+
+function renderBars(f){
+  const items=[
+    ["PE",f.pe==null?null:f.pe, "×"],
+    ["ROE",f.roe_pct,"%"],
+    ["Operating Margin",f.operating_margin_pct,"%"],
+    ["Revenue Growth",f.revenue_growth_pct,"%"],
+    ["Earnings Growth",f.earnings_growth_pct,"%"],
+    ["Debt/Equity",f.debt_to_equity,""]
+  ];
+  const html=items.map(([name,v,suffix])=>{
+    let width=0;
+    if(v!=null){
+      if(name==="PE") width=Math.max(0,Math.min(100,(40-v)/40*100));
+      else if(name==="Debt/Equity") width=Math.max(0,Math.min(100,(200-v)/200*100));
+      else width=Math.max(0,Math.min(100,(v/40)*100));
+    }
+    return `<div class="barrow">
+      <div class="barhead"><span>${name}</span><strong>${v==null?"N/A":Number(v).toFixed(2)+suffix}</strong></div>
+      <div class="bar"><div class="fill" style="width:${width}%"></div></div>
+    </div>`;
+  }).join("");
+  document.getElementById("fundBars").innerHTML=html;
+}
+
+function renderTable(id, rows){
+  document.getElementById(id).innerHTML=rows.map(r=>`<tr><td>${r[0]}</td><td><strong>${r[1]}</strong></td></tr>`).join("");
+}
+
+async function analyze(){
+  const company=document.getElementById("company").value.trim();
+  if(!company){ setStatus("scoreStatus","Enter a stock symbol."); return; }
+  setStatus("scoreStatus","Fetching live data...",true);
+  try{
+    const d=await api("/api/score",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({company})
+    });
+
+    document.getElementById("result").classList.remove("hidden");
+    document.getElementById("companyName").textContent=d.company || company.toUpperCase();
+    document.getElementById("symbol").textContent=d.symbol || "";
+    document.getElementById("ltp").textContent=money(d.ltp);
+    document.getElementById("score").textContent=d.score+"/100";
+
+    const dec=document.getElementById("decision");
+    dec.textContent=d.decision;
+    dec.className=decisionClass(d.decision);
+
+    document.getElementById("fundScore").textContent=d.fundamental.score+"/40";
+    document.getElementById("techScore").textContent=d.technical.score+"/30";
+    document.getElementById("valScore").textContent=d.valuation_risk.score+"/30";
+
+    renderBars(d.fundamental);
+
+    renderTable("techTable",[
+      ["RSI",val(d.technical.rsi)],
+      ["SMA 50",money(d.technical.sma50)],
+      ["SMA 200",money(d.technical.sma200)],
+      ["20D Momentum",pct(d.technical.momentum_20d_pct)],
+      ["Trend",d.technical.trend]
+    ]);
+
+    renderTable("valTable",[
+      ["PEG Ratio",val(d.valuation_risk.peg_ratio)],
+      ["Price / Book",val(d.valuation_risk.price_to_book)],
+      ["Free Cash Flow",val(d.valuation_risk.free_cashflow)],
+      ["Profit Margin",pct(d.valuation_risk.profit_margin_pct)],
+      ["Current Ratio",val(d.valuation_risk.current_ratio)]
+    ]);
+
+    document.getElementById("note").textContent=d.data_note+" "+d.disclaimer;
+    setStatus("scoreStatus","✅ Analysis complete",true);
+  }catch(e){
+    setStatus("scoreStatus","❌ "+e.message);
+  }
+}
+
+document.getElementById("company").addEventListener("keydown",e=>{
+  if(e.key==="Enter") analyze();
+});
+document.getElementById("totp").addEventListener("keydown",e=>{
+  if(e.key==="Enter") login();
+});
+</script>
+</body>
+</html>
