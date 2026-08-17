@@ -1,14 +1,11 @@
 import os
 import math
-import time
-import random
 from pathlib import Path
 import json
 
 import requests
 import pandas as pd
 import numpy as np
-import yfinance as yf
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -24,15 +21,375 @@ load_dotenv()
 
 app = FastAPI(title="StockScore Live - 100pt Model")
 
+# Twelve Data configuration
+# Add TWELVE_DATA_API_KEY in Render Environment Variables.
+TD_BASE_URL = "https://api.twelvedata.com"
+td_session = requests.Session()
+td_session.headers.update({
+    "User-Agent": "StockScore/1.0",
+    "Accept": "application/json",
+})
+TD_CACHE = {}
+TD_CACHE_TTL = 300  # seconds
+
+
+def td_request(endpoint, params=None, ttl=300):
+    """Request Twelve Data with short-lived server-side caching."""
+    api_key = os.getenv("TWELVE_DATA_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "TWELVE_DATA_API_KEY is missing. Add it in Render Environment Variables."
+        )
+
+    params = dict(params or {})
+    params["apikey"] = api_key
+    cache_key = (endpoint, tuple(sorted((str(k), str(v)) for k, v in params.items() if k != "apikey")))
+    now = __import__("time").time()
+
+    cached = TD_CACHE.get(cache_key)
+    if cached and now - cached["time"] < ttl:
+        return cached["data"]
+
+    try:
+        r = td_session.get(
+            f"{TD_BASE_URL}/{endpoint.lstrip('/')}",
+            params=params,
+            timeout=20,
+        )
+        if r.status_code == 429:
+            raise RuntimeError("Twelve Data rate limit reached. Please try again shortly.")
+        r.raise_for_status()
+        data = r.json()
+    except requests.RequestException as e:
+        raise RuntimeError(f"Twelve Data request failed: {e}")
+
+    if isinstance(data, dict) and str(data.get("status", "")).lower() == "error":
+        raise RuntimeError(data.get("message") or data.get("code") or "Twelve Data returned an error.")
+
+    TD_CACHE[cache_key] = {"time": now, "data": data}
+    return data
+
+
+def td_num(value):
+    """Convert Twelve Data numeric values safely."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return num(value)
+    try:
+        s = str(value).replace(",", "").replace("%", "").strip()
+        if not s or s.lower() in {"none", "null", "nan", "n/a", "na"}:
+            return None
+        return num(float(s))
+    except Exception:
+        return None
+
+
+def deep_find(obj, keys):
+    """Find the first numeric value matching one of the supplied keys."""
+    wanted = {str(k).lower() for k in keys}
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if str(k).lower() in wanted:
+                n = td_num(v)
+                if n is not None:
+                    return n
+        for v in obj.values():
+            found = deep_find(v, keys)
+            if found is not None:
+                return found
+    elif isinstance(obj, list):
+        for v in obj:
+            found = deep_find(v, keys)
+            if found is not None:
+                return found
+    return None
+
+
+def td_percent_ratio(value):
+    """Normalize a percentage-like API value to decimal form."""
+    n = td_num(value)
+    if n is None:
+        return None
+    # APIs may return either 0.25 or 25 for 25%.
+    return n / 100.0 if abs(n) > 2 else n
+
+
+class TDMarketData:
+    """Small compatibility wrapper so the existing scoring functions can use DataFrames."""
+    def __init__(self, financials=None, quarterly_financials=None,
+                 balance_sheet=None, cashflow=None):
+        self.financials = financials if financials is not None else pd.DataFrame()
+        self.quarterly_financials = (
+            quarterly_financials if quarterly_financials is not None else pd.DataFrame()
+        )
+        self.balance_sheet = balance_sheet if balance_sheet is not None else pd.DataFrame()
+        self.cashflow = cashflow if cashflow is not None else pd.DataFrame()
+
+
+def _latest_statement_value(rows, candidates):
+    """Get a value from the latest statement record using several possible field names."""
+    if not isinstance(rows, list):
+        return None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key in candidates:
+            if key in row:
+                value = td_num(row.get(key))
+                if value is not None:
+                    return value
+    return None
+
+
+def _make_df(row_map, records):
+    """Create a simple yfinance-compatible statement DataFrame."""
+    if not isinstance(records, list) or not records:
+        return pd.DataFrame()
+    values = {}
+    for label, candidates in row_map.items():
+        vals = []
+        for rec in records:
+            val = None
+            for key in candidates:
+                if key in rec:
+                    val = td_num(rec.get(key))
+                    if val is not None:
+                        break
+            vals.append(val)
+        if any(v is not None for v in vals):
+            values[label] = vals
+    if not values:
+        return pd.DataFrame()
+    return pd.DataFrame(values, index=range(len(records))).T
+
+
+def load_twelve_data(symbol):
+    """Load daily history and fundamental data from Twelve Data for an NSE stock."""
+    common = {"symbol": symbol, "exchange": "NSE"}
+
+    # Daily OHLCV: 260 trading sessions is enough for the current technical model.
+    ts = td_request(
+        "time_series",
+        {**common, "interval": "1day", "outputsize": 260, "order": "asc"},
+        ttl=180,
+    )
+    values = ts.get("values", []) if isinstance(ts, dict) else []
+    rows = []
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+        rows.append({
+            "datetime": item.get("datetime"),
+            "Open": td_num(item.get("open")),
+            "High": td_num(item.get("high")),
+            "Low": td_num(item.get("low")),
+            "Close": td_num(item.get("close")),
+            "Volume": td_num(item.get("volume")),
+        })
+
+    hist = pd.DataFrame(rows)
+    if not hist.empty:
+        hist["datetime"] = pd.to_datetime(hist["datetime"], errors="coerce")
+        hist = hist.dropna(subset=["datetime"]).sort_values("datetime").set_index("datetime")
+        for col in ["Open", "High", "Low", "Close", "Volume"]:
+            hist[col] = pd.to_numeric(hist[col], errors="coerce")
+
+    # Statistics contains many valuation/profitability fields, when enabled for the API key.
+    try:
+        stats = td_request("statistics", common, ttl=1800)
+    except Exception as e:
+        print("TWELVE DATA STATISTICS WARNING:", repr(e))
+        stats = {}
+
+    # Statements are fetched only once and cached by td_request().
+    try:
+        income_q = td_request(
+            "income_statement",
+            {**common, "period": "quarterly", "outputsize": 5},
+            ttl=3600,
+        )
+    except Exception as e:
+        print("TWELVE DATA QUARTERLY INCOME WARNING:", repr(e))
+        income_q = {}
+
+    try:
+        income_a = td_request(
+            "income_statement",
+            {**common, "period": "annual", "outputsize": 2},
+            ttl=3600,
+        )
+    except Exception as e:
+        print("TWELVE DATA ANNUAL INCOME WARNING:", repr(e))
+        income_a = {}
+
+    try:
+        balance = td_request(
+            "balance_sheet",
+            {**common, "period": "annual", "outputsize": 1},
+            ttl=3600,
+        )
+    except Exception as e:
+        print("TWELVE DATA BALANCE SHEET WARNING:", repr(e))
+        balance = {}
+
+    # Cash flow is relatively expensive on Twelve Data, so request it only when needed.
+    cashflow = {}
+    try:
+        cashflow = td_request(
+            "cash_flow",
+            {**common, "period": "annual", "outputsize": 1},
+            ttl=3600,
+        )
+    except Exception as e:
+        print("TWELVE DATA CASH FLOW WARNING:", repr(e))
+
+    q_records = income_q.get("income_statement", []) if isinstance(income_q, dict) else []
+    a_records = income_a.get("income_statement", []) if isinstance(income_a, dict) else []
+    b_records = balance.get("balance_sheet", []) if isinstance(balance, dict) else []
+    cf_records = cashflow.get("cash_flow", []) if isinstance(cashflow, dict) else []
+
+    financials = _make_df({
+        "Net Income": ["net_income"],
+        "Net Income Common Stockholders": ["net_income"],
+        "Total Revenue": ["sales", "revenue"],
+        "EPS": ["eps_diluted", "eps_basic"],
+    }, a_records)
+
+    quarterly_financials = _make_df({
+        "Net Income": ["net_income"],
+        "Net Income Common Stockholders": ["net_income"],
+        "Total Revenue": ["sales", "revenue"],
+        "EPS": ["eps_diluted", "eps_basic"],
+    }, q_records)
+
+    # Build balance-sheet rows in the format expected by the existing fallback engine.
+    balance_rows = {}
+    if b_records:
+        b = b_records[0]
+        assets = b.get("assets", {}) if isinstance(b.get("assets"), dict) else {}
+        liabilities = b.get("liabilities", {}) if isinstance(b.get("liabilities"), dict) else {}
+        equity = b.get("equity", {}) if isinstance(b.get("equity"), dict) else {}
+
+        current_assets = (
+            td_num(assets.get("current_assets", {}).get("total_current_assets"))
+            if isinstance(assets.get("current_assets"), dict) else None
+        )
+        current_liab = (
+            td_num(liabilities.get("current_liabilities", {}).get("total_current_liabilities"))
+            if isinstance(liabilities.get("current_liabilities"), dict) else None
+        )
+        stock_equity = td_num(equity.get("total_shareholders_equity"))
+        if stock_equity is None:
+            stock_equity = td_num(equity.get("shareholders_equity"))
+
+        if current_assets is not None:
+            balance_rows["Current Assets"] = [current_assets]
+        if current_liab is not None:
+            balance_rows["Current Liabilities"] = [current_liab]
+        if stock_equity is not None:
+            balance_rows["Stockholders Equity"] = [stock_equity]
+
+    balance_df = pd.DataFrame(balance_rows).T if balance_rows else pd.DataFrame()
+
+    # Build cash-flow rows for the existing FCF/earnings-quality logic.
+    cash_rows = {}
+    if cf_records:
+        cf = cf_records[0]
+        op = cf.get("operating_activities", {}) if isinstance(cf.get("operating_activities"), dict) else {}
+        inv = cf.get("investing_activities", {}) if isinstance(cf.get("investing_activities"), dict) else {}
+        ocf = td_num(op.get("net_cash_from_operating_activities"))
+        if ocf is None:
+            ocf = td_num(op.get("operating_cash_flow"))
+        capex = td_num(inv.get("capital_expenditures"))
+        if capex is None:
+            capex = td_num(inv.get("capital_expenditure"))
+        if ocf is not None:
+            cash_rows["Operating Cash Flow"] = [ocf]
+        if capex is not None:
+            # Keep the conventional negative-capex sign expected by the original code.
+            cash_rows["Capital Expenditure"] = [-abs(capex)]
+
+    cash_df = pd.DataFrame(cash_rows).T if cash_rows else pd.DataFrame()
+
+    # Normalize the statistics object into the info keys used by the original scoring engine.
+    info = {
+        "trailingPE": deep_find(stats, ["trailing_pe", "trailing_pe_ratio", "pe_ratio", "pe"]),
+        "forwardPE": deep_find(stats, ["forward_pe", "forward_pe_ratio"]),
+        "trailingPegRatio": deep_find(stats, ["peg_ratio", "trailing_peg_ratio"]),
+        "priceToBook": deep_find(stats, ["price_to_book", "price_to_book_ratio", "pb_ratio"]),
+        "returnOnEquity": td_percent_ratio(
+            deep_find(stats, ["return_on_equity", "roe", "roe_ratio"])
+        ),
+        "revenueGrowth": td_percent_ratio(
+            deep_find(stats, ["revenue_growth", "revenue_growth_yoy", "growth_rate"])
+        ),
+        "earningsGrowth": td_percent_ratio(
+            deep_find(stats, ["earnings_growth", "earnings_growth_yoy", "eps_growth"])
+        ),
+        "debtToEquity": deep_find(stats, ["debt_to_equity", "debt_equity_ratio"]),
+        "marketCap": deep_find(stats, ["market_capitalization", "market_cap"]),
+        "trailingEps": deep_find(stats, ["eps", "diluted_eps", "trailing_eps"]),
+        "forwardEps": deep_find(stats, ["forward_eps"]),
+        "beta": deep_find(stats, ["beta"]),
+        "freeCashflow": deep_find(stats, ["free_cash_flow", "free_cashflow"]),
+        "operatingCashflow": deep_find(stats, ["operating_cash_flow", "operating_cashflow"]),
+        "netIncomeToCommon": deep_find(stats, ["net_income", "net_income_to_common"]),
+        "currentRatio": deep_find(stats, ["current_ratio"]),
+    }
+
+    # Derive missing metrics from statements where possible.
+    if info["earningsGrowth"] is None and len(q_records) >= 5:
+        recent = td_num(q_records[0].get("net_income"))
+        old = td_num(q_records[4].get("net_income"))
+        if recent is not None and old not in (None, 0):
+            info["earningsGrowth"] = (recent - old) / abs(old)
+
+    if info["revenueGrowth"] is None and len(q_records) >= 5:
+        recent = _latest_statement_value(q_records[:1], ["sales", "revenue"])
+        old = _latest_statement_value(q_records[4:5], ["sales", "revenue"])
+        if recent is not None and old not in (None, 0):
+            info["revenueGrowth"] = (recent - old) / abs(old)
+
+    if info["trailingEps"] is None and q_records:
+        info["trailingEps"] = _latest_statement_value(q_records[:1], ["eps_diluted", "eps_basic"])
+
+    if info["netIncomeToCommon"] is None and a_records:
+        info["netIncomeToCommon"] = _latest_statement_value(a_records[:1], ["net_income"])
+
+    if info["marketCap"] is None:
+        # Statistics may be unavailable on lower plans; valuation items will then remain neutral.
+        pass
+
+    # If PE exists but PEG is absent, derive PEG from earnings growth.
+    if info["trailingPegRatio"] is None:
+        pe = td_num(info.get("trailingPE"))
+        eg = td_num(info.get("earningsGrowth"))
+        if pe is not None and eg is not None and eg > 0:
+            info["trailingPegRatio"] = pe / (eg * 100)
+
+    # If ROE is absent, derive it from latest net income / equity.
+    if info["returnOnEquity"] is None and not balance_df.empty and a_records:
+        net_income = _latest_statement_value(a_records[:1], ["net_income"])
+        equity = td_num(balance_df.loc["Stockholders Equity"].iloc[0]) if "Stockholders Equity" in balance_df.index else None
+        if net_income is not None and equity not in (None, 0):
+            info["returnOnEquity"] = net_income / equity
+
+    ticker = TDMarketData(
+        financials=financials,
+        quarterly_financials=quarterly_financials,
+        balance_sheet=balance_df,
+        cashflow=cash_df,
+    )
+
+    # LTP remains supplied by Kotak Neo; history/fundamentals come from Twelve Data.
+    return info, hist, ticker
+
+
+
 neo = None
 logged_in = False
 
-USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
-]
 
 # =========================================================
 # REQUEST MODELS
@@ -41,11 +398,13 @@ USER_AGENTS = [
 class LoginRequest(BaseModel):
     totp: str
 
+
 class StockRequest(BaseModel):
     company: str
 
+
 # =========================================================
-# HELPER FUNCTIONS (WITH PROXY BYPASS)
+# HELPER FUNCTIONS
 # =========================================================
 
 def num(v):
@@ -59,6 +418,7 @@ def num(v):
     except Exception:
         return None
 
+
 def clean_token(val):
     if val is None:
         return None
@@ -67,104 +427,19 @@ def clean_token(val):
     except (ValueError, TypeError):
         return str(val).strip()
 
-def fetch_working_proxy():
-    """Scrape and test free proxies to bypass Render/Cloud IP blocks."""
-    print("Fetching free proxy to bypass IP block...")
-    try:
-        urls = [
-            "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=3000&country=all&ssl=yes&anonymity=all",
-            "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt"
-        ]
-        proxies = []
-        for u in urls:
-            try:
-                res = requests.get(u, timeout=5)
-                if res.status_code == 200:
-                    urls_list = res.text.strip().split('\n')
-                    proxies.extend([p.strip() for p in urls_list if p.strip()])
-            except:
-                continue
-                
-        if not proxies: return None
-        
-        # Clean list and shuffle
-        proxies = [p for p in proxies if ":" in p]
-        random.shuffle(proxies)
-        
-        for p in proxies[:20]: # Test up to 20 proxies
-            proxy_url = f"http://{p}"
-            proxy_dict = {"http": proxy_url, "https": proxy_url}
-            try:
-                # Test against a lightweight Yahoo Finance endpoint
-                test = requests.get(
-                    "https://query2.finance.yahoo.com/v1/test/getcrumb",
-                    proxies=proxy_dict,
-                    timeout=3,
-                    headers={'User-Agent': 'Mozilla/5.0'}
-                )
-                if test.status_code == 200:
-                    print(f"[SUCCESS] Found working proxy: {proxy_url}")
-                    return proxy_url
-            except:
-                continue
-    except Exception as e:
-        print(f"Proxy scraper failed: {e}")
-    return None
-
-def fetch_yfinance_with_retry(symbol, max_retries=3):
-    """
-    Fetches Yahoo Finance data with robust proxy rotation and IP-spoofing headers.
-    """
-    last_exception = None
-    working_proxy = None
-    
-    for attempt in range(max_retries):
-        try:
-            session = requests.Session()
-            # Add random IP spoofing headers along with User-Agent
-            fake_ip = f"{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}"
-            session.headers.update({
-                'User-Agent': random.choice(USER_AGENTS),
-                'Accept': '*/*',
-                'Connection': 'keep-alive',
-                'X-Forwarded-For': fake_ip,
-                'X-Real-IP': fake_ip
-            })
-            
-            if attempt > 0:
-                print(f"[RETRY] Attempt {attempt+1}: Render IP likely blocked. Trying via Proxy...")
-                if not working_proxy:
-                    working_proxy = fetch_working_proxy()
-                
-                if working_proxy:
-                    session.proxies.update({
-                        "http": working_proxy, 
-                        "https": working_proxy
-                    })
-            
-            t = yf.Ticker(symbol + ".NS", session=session)
-            
-            info = t.info or {}
-            hist = t.history(period="1y", auto_adjust=False)
-            
-            if not info and hist.empty:
-                raise Exception("Empty data returned. IP or Proxy might be blocked.")
-                
-            return t, info, hist
-            
-        except Exception as e:
-            last_exception = e
-            working_proxy = None # Force a new proxy on the next loop iteration
-            print(f"YFinance Attempt {attempt + 1} failed: {str(e)}")
-            
-    raise last_exception
 
 def extract_fallback_metrics(t: yf.Ticker, info: dict):
+    """
+    Fallback extractor for NSE metrics missing in yfinance .info
+    Calculates Current Ratio, FCF, ROE, Earnings Growth, and PEG directly
+    from financial statements DataFrames.
+    """
     bs = getattr(t, "balance_sheet", pd.DataFrame())
     cf = getattr(t, "cashflow", pd.DataFrame())
     fin = getattr(t, "financials", pd.DataFrame())
     q_fin = getattr(t, "quarterly_financials", pd.DataFrame())
 
+    # 1. Current Ratio Fallback
     current_ratio = num(info.get("currentRatio"))
     if current_ratio is None and not bs.empty:
         try:
@@ -175,16 +450,19 @@ def extract_fallback_metrics(t: yf.Ticker, info: dict):
         except Exception:
             pass
 
+    # 2. Free Cash Flow (FCF) Fallback
     fcf = num(info.get("freeCashflow"))
     if fcf is None and not cf.empty:
         try:
             ocf = num(cf.loc["Operating Cash Flow"].iloc[0]) if "Operating Cash Flow" in cf.index else None
             capex = num(cf.loc["Capital Expenditure"].iloc[0]) if "Capital Expenditure" in cf.index else 0
             if ocf is not None:
+                # Capex is usually reported as negative in yfinance
                 fcf = ocf + capex if capex < 0 else ocf - capex
         except Exception:
             pass
 
+    # 3. ROE Fallback
     roe = num(info.get("returnOnEquity"))
     if roe is None and not fin.empty and not bs.empty:
         try:
@@ -195,6 +473,7 @@ def extract_fallback_metrics(t: yf.Ticker, info: dict):
         except Exception:
             pass
 
+    # 4. Earnings Growth Fallback (YoY Quarterly Growth)
     eg = num(info.get("earningsGrowth"))
     if eg is None and not q_fin.empty and q_fin.shape[1] >= 5:
         try:
@@ -207,6 +486,7 @@ def extract_fallback_metrics(t: yf.Ticker, info: dict):
         except Exception:
             pass
 
+    # 5. PEG Ratio Fallback
     peg = num(info.get("pegRatio"))
     pe = num(info.get("trailingPE"))
     if peg is None and pe and eg and eg > 0:
@@ -250,29 +530,46 @@ def login_neo(totp):
         )
 
         if isinstance(r, dict) and "error" in r:
-            raise HTTPException(status_code=401, detail=str(r))
+            raise HTTPException(
+                status_code=401,
+                detail=str(r)
+            )
 
-        r = neo.totp_validate(mpin=os.getenv("KOTAK_MPIN"))
+        r = neo.totp_validate(
+            mpin=os.getenv("KOTAK_MPIN")
+        )
 
         if isinstance(r, dict) and "error" in r:
-            raise HTTPException(status_code=401, detail=str(r))
+            raise HTTPException(
+                status_code=401,
+                detail=str(r)
+            )
 
         logged_in = True
-        return {"ok": True, "message": "Kotak Neo login successful"}
+        return {
+            "ok": True,
+            "message": "Kotak Neo login successful"
+        }
 
     except HTTPException:
         raise
+
     except Exception as e:
         logged_in = False
-        raise HTTPException(status_code=401, detail=f"Kotak Neo login failed: {str(e)}")
+        raise HTTPException(
+            status_code=401,
+            detail=f"Kotak Neo login failed: {str(e)}"
+        )
 
 
 # =========================================================
-# FIND NSE STOCK
+# FIND NSE STOCK (UPDATED MATCHING LOGIC & BLOCK DEAL FILTER)
 # =========================================================
 
 def find_stock(symbol):
     symbol = symbol.upper().strip()
+    print(f"\n--- Searching Kotak Neo for: '{symbol}' ---")
+    
     queries_to_try = [f"{symbol}-EQ", symbol]
     segments_to_try = ["nse_cm", "NSE", "bse_cm", "BSE"]
     
@@ -281,8 +578,15 @@ def find_stock(symbol):
     for seg in segments_to_try:
         for q in queries_to_try:
             try:
-                res = neo.search_scrip(exchange_segment=seg, symbol=q, expiry="", option_type="", strike_price="")
-                if not res: continue
+                res = neo.search_scrip(
+                    exchange_segment=seg,
+                    symbol=q,
+                    expiry="",
+                    option_type="",
+                    strike_price=""
+                )
+                if not res:
+                    continue
 
                 if isinstance(res, str):
                     try:
@@ -304,11 +608,13 @@ def find_stock(symbol):
                 if items:
                     valid_items.extend(items)
             except Exception as e:
-                pass
+                print(f"[SEARCH ERROR] seg='{seg}', query='{q}': {e}")
 
     if not valid_items:
+        print(f"[SEARCH FAILED] No response from Kotak Neo for '{symbol}'")
         return None
 
+    # Deduplicate results
     unique_items = []
     seen = set()
     for item in valid_items:
@@ -334,12 +640,14 @@ def find_stock(symbol):
 
     target_eq = f"{symbol}-EQ"
 
+    # Pass 1: Strict Exact Match for Main Equity Trading Symbol (SYMBOL-EQ)
     for item in unique_items:
         token = get_token(item)
         trd_sym = get_trd_sym(item)
         exch = get_exch(item)
 
         if token and trd_sym == target_eq:
+            print(f"[MATCH FOUND - Pass 1 (Exact EQ)] {trd_sym} | Token: {token} | Exch: {exch}")
             return {
                 "pSymbolName": symbol,
                 "pTrdSymbol": trd_sym,
@@ -347,6 +655,7 @@ def find_stock(symbol):
                 "pExchSeg": exch if "nse" in exch else "nse_cm"
             }
 
+    # Pass 2: Fallback Exact Match on Symbol / Symbol Name (Excluding Derivatives & Block Deals)
     for item in unique_items:
         token = get_token(item)
         trd_sym = get_trd_sym(item)
@@ -356,6 +665,7 @@ def find_stock(symbol):
         is_non_equity = any(trd_sym.endswith(ext) or ext in trd_sym for ext in ("-BL", "-FUT", "-CE", "-PE", "-N1", "-N2", "-E1", "-BE", "-BZ"))
 
         if token and not is_non_equity and (trd_sym == symbol or sym_name == symbol):
+            print(f"[MATCH FOUND - Pass 2 (Clean Symbol)] {trd_sym} | Token: {token} | Exch: {exch}")
             return {
                 "pSymbolName": symbol,
                 "pTrdSymbol": trd_sym,
@@ -363,6 +673,7 @@ def find_stock(symbol):
                 "pExchSeg": exch if "nse" in exch else "nse_cm"
             }
 
+    # Pass 3: General Cash Market Equity Fallback
     for item in unique_items:
         token = get_token(item)
         trd_sym = get_trd_sym(item)
@@ -372,6 +683,7 @@ def find_stock(symbol):
         is_non_equity = any(trd_sym.endswith(ext) or ext in trd_sym for ext in ("-BL", "-FUT", "-CE", "-PE", "-N1", "-N2", "-E1"))
 
         if token and not is_non_equity and (symbol in trd_sym or symbol in sym_name):
+            print(f"[MATCH FOUND - Pass 3 (Fallback)] {trd_sym} | Token: {token} | Exch: {exch}")
             return {
                 "pSymbolName": symbol,
                 "pTrdSymbol": trd_sym,
@@ -379,7 +691,9 @@ def find_stock(symbol):
                 "pExchSeg": exch if "nse" in exch else "nse_cm"
             }
 
+    print(f"[SEARCH FAILED] No valid main equity token extracted for '{symbol}'")
     return None
+
 
 # =========================================================
 # INTELLIGENT 100-POINT SCORING ENGINE
@@ -392,6 +706,7 @@ def calculate_rsi(close, n=14):
     rs = gain / loss.replace(0, pd.NA)
     result = 100 - (100 / (1 + rs))
     return num(result.iloc[-1])
+
 
 def analyze_fundamentals(info, ticker):
     pts = 0
@@ -520,6 +835,7 @@ def analyze_fundamentals(info, ticker):
         }
     }
 
+
 def analyze_technicals(hist):
     if hist is None or hist.empty or len(hist) < 50:
         return {"score": 0, "max": 25, "confidence": 0.0, "positives": [], "warnings": [], "data": {}}
@@ -612,6 +928,7 @@ def analyze_technicals(hist):
         }
     }
 
+
 def analyze_valuation(info, ticker):
     positives = []
     warnings = []
@@ -676,6 +993,7 @@ def analyze_valuation(info, ticker):
             "fcf_yield_pct": round((fcf / mcap) * 100, 2) if (fcf and mcap) else None
         }
     }
+
 
 def analyze_risk(info, hist, ticker):
     positives = []
@@ -762,6 +1080,7 @@ def calculate_fair_value(info, ltp):
         "valuation_status": "Neutral"
     }
 
+
 def make_decision(total_score, f_score, t_score, warnings):
     critical_warnings = len([w for w in warnings if "high" in w.lower() or "contraction" in w.lower()])
 
@@ -784,9 +1103,11 @@ def home():
     frontend = (Path(__file__).parent / "../frontend/index.html").resolve()
     return FileResponse(str(frontend))
 
+
 @app.post("/api/login")
 def api_login(x: LoginRequest):
     return login_neo(x.totp)
+
 
 @app.post("/api/score")
 def api_score(x: StockRequest):
@@ -808,6 +1129,7 @@ def api_score(x: StockRequest):
             "lastTradedPrice", "last_traded_price",
             "pLtp", "pLTP", "lp"
         )
+
         def walk(value):
             if isinstance(value, dict):
                 for key in preferred_keys:
@@ -815,21 +1137,26 @@ def api_score(x: StockRequest):
                         n = num(value.get(key))
                         if n is not None and n > 0:
                             return n
+
                 for key in ("data", "result", "quotes", "quote", "response"):
                     if key in value:
                         found = walk(value[key])
                         if found is not None:
                             return found
+
                 for child in value.values():
                     found = walk(child)
                     if found is not None:
                         return found
+
             elif isinstance(value, list):
                 for child in value:
                     found = walk(child)
                     if found is not None:
                         return found
+
             return None
+
         return walk(obj)
 
     token = clean_token(stock.get("pSymbol"))
@@ -854,20 +1181,18 @@ def api_score(x: StockRequest):
     if ltp is None:
         raise HTTPException(status_code=502, detail="Unable to retrieve live LTP from Kotak Neo.")
 
-    # --- Updated Resilient Yahoo Finance Block ---
     try:
-        t, info, hist = fetch_yfinance_with_retry(symbol)
+        info, hist, td_data = load_twelve_data(symbol)
     except Exception as e:
         raise HTTPException(
             status_code=502,
-            detail=f"Yahoo Finance blocked the request even after retries. Detail: {str(e)}"
+            detail=f"Twelve Data fetch error: {str(e)}"
         )
-    # ---------------------------------------------
 
-    f_res = analyze_fundamentals(info, t)
+    f_res = analyze_fundamentals(info, td_data)
     t_res = analyze_technicals(hist)
-    v_res = analyze_valuation(info, t)
-    r_res = analyze_risk(info, hist, t)
+    v_res = analyze_valuation(info, td_data)
+    r_res = analyze_risk(info, hist, td_data)
 
     data_confidence_pct = round(
         ((f_res["confidence"] * 0.40) +
@@ -904,6 +1229,7 @@ def api_score(x: StockRequest):
         "why_buy": positives,
         "risk_warnings": warnings,
         "fair_value_analysis": valuation_metrics,
-        "data_note": "Live LTP: Kotak Neo. Financials & Technical History: Yahoo Finance.",
+        "data_note": "Live LTP: Kotak Neo. Financials & Technical History: Twelve Data.",
         "disclaimer": "Decision-support algorithm; not personal financial or investment advice."
     }
+
