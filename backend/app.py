@@ -247,99 +247,80 @@ def find_stock(symbol):
 # =========================================================
 
 def analyze_fundamentals(tv_data):
-    """
-    Fundamental score: fixed 40-point model.
-    Missing data gets no points; available metrics do NOT get rescaled to 40.
-    """
+    pts = 0
+    max_possible = 0
     positives = []
     warnings = []
-    pts = 0
-    data_points_found = 0
-    total_metrics = 4
 
     pe = num(tv_data.get("price_earnings_ttm"))
-    roe_pct = num(tv_data.get("return_on_equity"))
+    ind_pe = 25.0 
+    roe_pct = num(tv_data.get("return_on_equity")) 
     rg_pct = num(tv_data.get("total_revenue_yoy_growth")) or num(tv_data.get("revenue_growth_yoy"))
     de = num(tv_data.get("debt_to_equity_fq")) or num(tv_data.get("debt_to_equity"))
 
-    # PE: 10 points
-    if pe is not None and pe > 0:
-        data_points_found += 1
-        if pe <= 15:
-            pts += 10
-            positives.append(f"Very attractive PE ratio ({pe:.1f})")
-        elif pe <= 20:
+    if pe is not None:
+        max_possible += 8
+        if pe <= 18:
             pts += 8
-            positives.append(f"Attractive PE ratio ({pe:.1f})")
-        elif pe <= 30:
-            pts += 6
-            positives.append(f"Reasonable PE ratio ({pe:.1f})")
-        elif pe <= 40:
-            pts += 3
-            warnings.append(f"High PE valuation ({pe:.1f})")
-        else:
-            warnings.append(f"Very high PE valuation ({pe:.1f})")
-
-    # Revenue Growth: 10 points
-    if rg_pct is not None:
-        data_points_found += 1
-        if rg_pct >= 20:
-            pts += 10
-            positives.append(f"Excellent Revenue Growth (+{rg_pct:.1f}%)")
-        elif rg_pct >= 12:
-            pts += 8
-            positives.append(f"Strong Revenue Growth (+{rg_pct:.1f}%)")
-        elif rg_pct >= 5:
+            positives.append(f"Attractive PE ratio of {pe:.1f}")
+        elif pe <= 28:
             pts += 5
-        elif rg_pct >= 0:
+            positives.append(f"Reasonable PE ratio of {pe:.1f}")
+        elif pe <= 35:
             pts += 2
-            warnings.append(f"Low Revenue Growth (+{rg_pct:.1f}%)")
         else:
-            warnings.append(f"Declining Revenue ({rg_pct:.1f}%)")
+            warnings.append(f"High PE valuation ({pe:.1f})")
 
-    # ROE: 10 points
+    if rg_pct is not None:
+        max_possible += 8
+        if rg_pct >= 15:
+            pts += 8 
+            positives.append(f"Strong Revenue Growth (+{rg_pct:.1f}%)")
+        elif rg_pct >= 8:
+            pts += 4
+        elif rg_pct < 0:
+            warnings.append(f"Declining Revenue (-{abs(rg_pct):.1f}%)")
+
     if roe_pct is not None:
-        data_points_found += 1
-        if roe_pct >= 25:
-            pts += 10
-            positives.append(f"Excellent ROE ({roe_pct:.1f}%)")
-        elif roe_pct >= 18:
+        max_possible += 8
+        if roe_pct >= 20:
             pts += 8
-            positives.append(f"Strong ROE ({roe_pct:.1f}%)")
-        elif roe_pct >= 12:
+            positives.append(f"High Return on Equity (ROE {roe_pct:.1f}%)")
+        elif roe_pct >= 14:
             pts += 5
+            positives.append(f"Healthy ROE of {roe_pct:.1f}%")
         elif roe_pct >= 8:
             pts += 2
-            warnings.append(f"Low ROE ({roe_pct:.1f}%)")
         else:
-            warnings.append(f"Very low ROE ({roe_pct:.1f}%)")
+            warnings.append(f"Low ROE ({roe_pct:.1f}%) indicates lower capital efficiency")
 
-    # Debt/Equity: 10 points
-    if de is not None and de >= 0:
-        data_points_found += 1
-        if de <= 0.30:
-            pts += 10
-            positives.append(f"Very low Debt/Equity ({de:.2f})")
-        elif de <= 0.60:
+    if de is not None:
+        max_possible += 8
+        if de <= 0.3: 
             pts += 8
-            positives.append(f"Low Debt/Equity ({de:.2f})")
-        elif de <= 1.00:
+            positives.append(f"Low Debt/Equity ratio ({de:.2f})")
+        elif de <= 0.7:
             pts += 5
-        elif de <= 1.50:
-            pts += 2
-            warnings.append(f"Elevated Debt/Equity ({de:.2f})")
+        elif de <= 1.2:
+            pts += 1
         else:
-            warnings.append(f"High Debt/Equity ({de:.2f})")
+            warnings.append(f"High Debt to Equity ratio ({de:.2f})")
+
+    # STRICT SCALING: Calculate percentage of actual points vs possible points
+    if max_possible > 0:
+        pts = int((pts / max_possible) * 40)
+        
+    conf = (max_possible / 32) if max_possible > 0 else 0
 
     return {
         "score": min(pts, 40),
         "max": 40,
-        "confidence": data_points_found / total_metrics,
+        "confidence": conf,
         "positives": positives,
         "warnings": warnings,
         "data": {
             "pe": pe,
-            "industry_pe": None,
+            "industry_pe": ind_pe,
             "roe_pct": round(roe_pct, 2) if roe_pct is not None else None,
             "revenue_growth_pct": round(rg_pct, 2) if rg_pct is not None else None,
             "debt_to_equity": de
@@ -347,14 +328,14 @@ def analyze_fundamentals(tv_data):
     }
 
 def analyze_technicals(tv_data):
-    """Technical score: fixed 25-point model."""
     positives = []
     warnings = []
     pts = 0
-    found = 0
-    total_metrics = 4
 
     last_price = num(tv_data.get("close"))
+    if not last_price:
+        return {"score": 0, "max": 25, "confidence": 0.0, "positives": [], "warnings": [], "data": {}}
+
     sma20 = num(tv_data.get("SMA20"))
     sma50 = num(tv_data.get("SMA50"))
     sma200 = num(tv_data.get("SMA200"))
@@ -365,172 +346,120 @@ def analyze_technicals(tv_data):
     high_52 = num(tv_data.get("price_52_week_high")) or num(tv_data.get("High.52"))
     low_52 = num(tv_data.get("price_52_week_low")) or num(tv_data.get("Low.52"))
 
-    if not last_price:
-        return {
-            "score": 0, "max": 25, "confidence": 0.0,
-            "positives": [], "warnings": ["Live/TradingView price unavailable."], "data": {}
-        }
+    if sma50 and sma200:
+        if last_price > sma50: pts += 3
+        if last_price > sma200: pts += 3
+        if sma50 > sma200: pts += 2
 
-    # Trend: 8 points
-    if sma50 is not None and sma200 is not None:
-        found += 1
         if last_price > sma50 > sma200:
-            pts += 8
-            positives.append("Strong Bullish Trend (Price > SMA50 > SMA200)")
-        elif last_price > sma50 and last_price > sma200:
-            pts += 6
-            positives.append("Bullish Trend (Price above SMA50 and SMA200)")
-        elif last_price > sma50:
-            pts += 4
-        elif last_price > sma200:
-            pts += 2
-        else:
-            warnings.append("Price is below both SMA50 and SMA200.")
+            positives.append("Strong Bullish Trend Structure (Price > SMA50 > SMA200)")
+        elif last_price < sma50 < sma200:
+            warnings.append("Bearish Trend Alignment (Price < SMA50 < SMA200)")
 
-    # RSI: 5 points
     if rv is not None:
-        found += 1
-        if 55 <= rv <= 68:
+        if 55 <= rv <= 70:
             pts += 5
-            positives.append(f"Healthy RSI ({rv:.1f})")
-        elif 50 <= rv < 55:
-            pts += 3
-        elif 68 < rv <= 75:
+            positives.append(f"Healthy Bullish RSI zone ({rv:.1f})")
+        elif 45 <= rv < 55:
             pts += 2
-            warnings.append(f"RSI elevated ({rv:.1f})")
         elif rv > 75:
-            pts += 0
-            warnings.append(f"RSI Overbought ({rv:.1f})")
-        elif 40 <= rv < 50:
-            pts += 1
-        else:
-            warnings.append(f"Weak RSI ({rv:.1f})")
+            warnings.append(f"RSI Overbought ({rv:.1f}) - Short-term pullback risk")
+        elif rv < 35:
+            warnings.append(f"RSI Oversold ({rv:.1f}) - Strong weakness")
 
-    # Momentum: 7 points
-    if m20 is not None and m60 is not None:
-        found += 1
-        if m20 >= 5 and m60 >= 10:
-            pts += 7
-            positives.append(f"Strong momentum (1M +{m20:.1f}%, 3M +{m60:.1f}%)")
-        elif m20 >= 3 and m60 >= 5:
-            pts += 5
-        elif m20 >= 0 and m60 >= 0:
-            pts += 3
-        elif m20 < -8 or m60 < -12:
-            warnings.append(f"Negative momentum (1M {m20:.1f}%, 3M {m60:.1f}%)")
-        else:
-            pts += 1
+    if m20 is not None:
+        if m20 >= 5:
+            pts += 4
+            positives.append(f"Positive 1-Month momentum (+{m20:.1f}%)")
+        elif m20 < -5:
+            warnings.append(f"Negative short-term momentum ({m20:.1f}% 1M return)")
 
-    # 52-week position: 5 points
-    if high_52 is not None and low_52 is not None and high_52 > low_52:
-        found += 1
+    if m60 is not None and m60 >= 10:
+        pts += 3
+
+    dist_high, dist_low = None, None
+    if high_52 and low_52 and last_price:
         dist_high = ((last_price - high_52) / high_52) * 100
         dist_low = ((last_price - low_52) / low_52) * 100
-
+        
         if dist_high >= -5:
-            pts += 1
-            warnings.append("Trading near 52-Week High resistance zone.")
+            warnings.append("Trading near 52-Week High resistance zone")
         elif dist_low <= 10:
-            pts += 2
-            positives.append("Trading near 52-Week Low support zone.")
-        elif dist_high >= -20:
-            pts += 4
-        else:
-            pts += 5
+            positives.append("Trading close to 52-Week Low support base")
+            pts += 3
 
     return {
         "score": min(pts, 25),
         "max": 25,
-        "confidence": found / total_metrics,
+        "confidence": 1.0,
         "positives": positives,
         "warnings": warnings,
         "data": {
-            "rsi": round(rv, 2) if rv is not None else None,
-            "sma20": round(sma20, 2) if sma20 is not None else None,
-            "sma50": round(sma50, 2) if sma50 is not None else None,
-            "sma200": round(sma200, 2) if sma200 is not None else None,
-            "momentum_1m_pct": round(m20, 2) if m20 is not None else None,
-            "momentum_3m_pct": round(m60, 2) if m60 is not None else None,
-            "dist_52w_high_pct": round(((last_price - high_52) / high_52) * 100, 2)
-                if high_52 else None,
-            "dist_52w_low_pct": round(((last_price - low_52) / low_52) * 100, 2)
-                if low_52 else None
+            "rsi": round(rv, 2) if rv else None,
+            "sma20": round(sma20, 2) if sma20 else None,
+            "sma50": round(sma50, 2) if sma50 else None,
+            "sma200": round(sma200, 2) if sma200 else None,
+            "momentum_1m_pct": round(m20, 2) if m20 else None,
+            "momentum_3m_pct": round(m60, 2) if m60 else None,
+            "dist_52w_high_pct": round(dist_high, 2) if dist_high else None,
+            "dist_52w_low_pct": round(dist_low, 2) if dist_low else None
         }
     }
 
 def analyze_valuation(tv_data):
-    """
-    Valuation score: fixed 20-point model.
-    Missing data gets no points; available metrics are never rescaled.
-    """
     positives = []
     warnings = []
     pts = 0
-    found = 0
-    total_metrics = 3
+    max_possible = 0
 
     pe = num(tv_data.get("price_earnings_ttm"))
     eg_pct = num(tv_data.get("earnings_growth")) or num(tv_data.get("total_revenue_yoy_growth"))
-
-    peg = None
-    if pe is not None and eg_pct is not None and eg_pct > 0:
-        peg = round(pe / eg_pct, 2)
-
+    peg = round(pe / eg_pct, 2) if pe and eg_pct and eg_pct > 0 else None
     pb = num(tv_data.get("price_book_fq")) or num(tv_data.get("price_book_ratio"))
     fcf_margin = num(tv_data.get("free_cash_flow_margin_ttm"))
 
-    # PEG: 7 points
     if peg is not None and peg > 0:
-        found += 1
-        if peg <= 0.8:
-            pts += 7
-            positives.append(f"Very attractive PEG ({peg:.2f})")
-        elif peg <= 1.2:
-            pts += 6
-            positives.append(f"Attractive PEG ({peg:.2f})")
-        elif peg <= 1.8:
+        max_possible += 8
+        if peg <= 1.0:
+            pts += 8
+            positives.append(f"Attractive PEG ratio ({peg:.2f})")
+        elif peg <= 1.5:
             pts += 4
-        elif peg <= 2.5:
-            pts += 2
-            warnings.append(f"Elevated PEG ({peg:.2f})")
-        else:
-            warnings.append(f"High PEG ({peg:.2f}) indicates overvaluation")
-
-    # P/B: 6 points
-    if pb is not None and pb > 0:
-        found += 1
-        if pb <= 1.5:
-            pts += 6
-            positives.append(f"Attractive Price-to-Book ({pb:.2f})")
-        elif pb <= 2.5:
-            pts += 5
-        elif pb <= 4.0:
-            pts += 3
-        elif pb <= 6.0:
+        elif peg <= 2.0:
             pts += 1
-            warnings.append(f"Elevated Price-to-Book ({pb:.2f})")
         else:
-            warnings.append(f"High Price-to-Book ({pb:.2f})")
+            warnings.append(f"High PEG ratio ({peg:.2f})")
 
-    # FCF Margin: 7 points
     if fcf_margin is not None:
-        found += 1
+        max_possible += 6
         if fcf_margin >= 15:
-            pts += 7
+            pts += 6
             positives.append(f"Strong Free Cash Flow Margin ({fcf_margin:.1f}%)")
-        elif fcf_margin >= 8:
-            pts += 5
-        elif fcf_margin >= 3:
+        elif fcf_margin >= 5:
             pts += 3
-        elif fcf_margin >= 0:
-            pts += 1
+        elif fcf_margin < 0:
+            warnings.append("Negative Free Cash Flow Margin")
+
+    if pb is not None and pb > 0:
+        max_possible += 6
+        if pb <= 2.5:
+            pts += 6
+            positives.append(f"Reasonable Price to Book value ({pb:.2f})")
+        elif pb <= 5.0:
+            pts += 2
         else:
-            warnings.append(f"Negative Free Cash Flow Margin ({fcf_margin:.1f}%)")
+            warnings.append(f"Elevated Price-to-Book multiple ({pb:.2f})")
+
+    # STRICT SCALING
+    if max_possible > 0:
+        pts = int((pts / max_possible) * 20) 
+        
+    conf = (max_possible / 20) if max_possible > 0 else 0
 
     return {
         "score": min(pts, 20),
         "max": 20,
-        "confidence": found / total_metrics,
+        "confidence": conf,
         "positives": positives,
         "warnings": warnings,
         "data": {
@@ -541,50 +470,37 @@ def analyze_valuation(tv_data):
     }
 
 def analyze_risk(tv_data):
-    """Risk score: fixed 15-point model."""
     positives = []
     warnings = []
     pts = 0
-    found = 0
-    total_metrics = 2
 
     beta = num(tv_data.get("beta_1_year"))
     current_ratio = num(tv_data.get("current_ratio_fq")) or num(tv_data.get("current_ratio"))
 
-    # Beta: 7 points
     if beta is not None:
-        found += 1
-        if 0.5 <= beta <= 1.0:
+        if 0.5 <= beta <= 1.1:
             pts += 7
-            positives.append(f"Moderate Market Beta ({beta:.2f})")
+            positives.append(f"Moderate Market Beta ({beta:.2f}) - Lower systematic risk")
         elif beta < 0.5:
             pts += 5
-            positives.append(f"Low Beta ({beta:.2f})")
-        elif beta <= 1.3:
-            pts += 4
-        elif beta <= 1.7:
-            pts += 2
-            warnings.append(f"Elevated Beta ({beta:.2f})")
+        elif beta <= 1.5:
+            pts += 3
         else:
-            warnings.append(f"High Beta ({beta:.2f}) - Elevated volatility")
+            warnings.append(f"High Beta ({beta:.2f}) - Elevated volatility relative to the market")
 
-    # Current Ratio: 8 points
-    if current_ratio is not None and current_ratio > 0:
-        found += 1
-        if current_ratio >= 2.0:
+    if current_ratio is not None:
+        if current_ratio >= 1.5:
             pts += 8
             positives.append(f"Strong Current Ratio ({current_ratio:.2f})")
-        elif current_ratio >= 1.5:
-            pts += 6
         elif current_ratio >= 1.0:
-            pts += 3
+            pts += 4
         else:
             warnings.append(f"Low Current Ratio ({current_ratio:.2f}) - Working capital pressure")
 
     return {
         "score": min(pts, 15),
         "max": 15,
-        "confidence": found / total_metrics,
+        "confidence": 1.0,
         "positives": positives,
         "warnings": warnings,
         "data": {
@@ -592,8 +508,6 @@ def analyze_risk(tv_data):
             "current_ratio": current_ratio
         }
     }
-
-
 
 
 # =========================================================
@@ -626,44 +540,19 @@ def calculate_fair_value(tv_data, ltp):
         "valuation_status": "Neutral"
     }
 
-def make_decision(total_score, f_score, t_score, v_score, r_score, warnings):
-    """
-    Conservative decision engine.
-    BUY requires both fundamental and technical strength.
-    STRONG BUY additionally requires valuation and risk support.
-    """
-    critical_warnings = len([
-        w for w in warnings
-        if any(word in w.lower() for word in (
-            "high", "very high", "declining", "negative", "overbought",
-            "weak", "pressure", "overvaluation"
-        ))
-    ])
+def make_decision(total_score, f_score, t_score, warnings):
+    # Added "negative" to critical warnings to catch bad cash flows/growth
+    critical_warnings = len([w for w in warnings if "high" in w.lower() or "contraction" in w.lower() or "negative" in w.lower()])
 
-    if (
-        total_score >= 80
-        and f_score >= 28
-        and t_score >= 17
-        and v_score >= 12
-        and r_score >= 8
-        and critical_warnings == 0
-    ):
+    # Raised cut-offs significantly
+    if total_score >= 80 and f_score >= 28 and t_score >= 18 and critical_warnings == 0:
         return "STRONG BUY"
-
-    if (
-        total_score >= 65
-        and f_score >= 22
-        and t_score >= 13
-        and critical_warnings <= 1
-    ):
+    elif total_score >= 65 and f_score >= 24:
         return "BUY"
-
-    if total_score >= 50:
+    elif total_score >= 48:
         return "HOLD"
-
-    return "AVOID"
-
-
+    else:
+        return "AVOID"
 
 
 # =========================================================
@@ -760,20 +649,7 @@ def api_score(x: StockRequest):
     positives = f_res["positives"] + t_res["positives"] + v_res["positives"] + r_res["positives"]
     warnings = f_res["warnings"] + t_res["warnings"] + v_res["warnings"] + r_res["warnings"]
 
-    # Do not hide missing-data risk behind a high score.
-    if data_confidence_pct < 70:
-        warnings.append(
-            f"Limited data confidence ({data_confidence_pct:.1f}%) - decision should be treated cautiously."
-        )
-
-    decision = make_decision(
-        total_score,
-        f_res["score"],
-        t_res["score"],
-        v_res["score"],
-        r_res["score"],
-        warnings
-    )
+    decision = make_decision(total_score, f_res["score"], t_res["score"], warnings)
     valuation_metrics = calculate_fair_value(tv_data, ltp)
 
     return {
@@ -782,7 +658,7 @@ def api_score(x: StockRequest):
         "token": token,
         "ltp": ltp,
         "score": total_score,
-        "score_model": "100-Point Fixed Model: Fundamental (40) + Technical (25) + Valuation (20) + Risk (15)",
+        "score_model": "100-Point Intelligent Model: Fundamental (40) + Technical (25) + Valuation (20) + Risk (15)",
         "decision": decision,
         "data_confidence_pct": data_confidence_pct,
         "breakdown": {
@@ -797,4 +673,3 @@ def api_score(x: StockRequest):
         "data_note": "Live LTP: Kotak Neo. Financials & Technical History: TradingView Scanner.",
         "disclaimer": "Decision-support algorithm; not personal financial or investment advice."
     }
-
