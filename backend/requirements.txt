@@ -2,5 +2,6 @@ fastapi
 uvicorn>=0.30.0
 python-dotenv
 pandas
-yfinance
+numpy
+requests
 git+https://github.com/Kotak-Neo/Kotak-neo-api-v2.git@v2.0.2#egg=neo_api_client
