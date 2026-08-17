@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StockScore Live</title>
+    <title>StockMeter — 100-Point Stock Analysis</title>
     <style>
         :root {
             --bg-color: #f4f6f9;
@@ -189,16 +189,69 @@
         }
 
         .reason-box li { margin-bottom: 6px; }
-    </style>
+    
+    :root { --primary:#2563eb; --primary-dark:#1d4ed8; --surface:#ffffff; --bg:#f5f7fb; --text:#111827; --muted:#64748b; --border:#e2e8f0; --green:#16a34a; --red:#dc2626; --amber:#d97706; }
+    body { background:var(--bg) !important; color:var(--text); }
+    .container { max-width:1100px !important; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; padding:10px 0 18px; }
+    .brand { display:flex; align-items:center; gap:10px; }
+    .brand-mark { width:40px; height:40px; display:grid; place-items:center; border-radius:12px; background:var(--primary); color:#fff; font-weight:800; }
+    .brand strong { display:block; font-size:20px; }
+    .brand small { color:var(--muted); }
+    .top-actions { display:flex; gap:8px; }
+    .ghost-btn,.pro-btn { border:1px solid var(--border); background:#fff; border-radius:10px; padding:9px 13px; cursor:pointer; font-weight:600; }
+    .pro-btn { background:#111827; color:#fff; border-color:#111827; }
+    .hero { display:flex; justify-content:space-between; align-items:center; gap:20px; margin:8px 0 18px; padding:28px; border-radius:20px; background:linear-gradient(135deg,#0f172a,#1e3a8a); color:#fff; box-shadow:0 14px 40px rgba(15,23,42,.18); }
+    .hero h1 { font-size:34px; line-height:1.1; margin:7px 0 10px; }
+    .hero p { max-width:680px; color:#dbeafe; margin:0; }
+    .eyebrow { font-size:11px; font-weight:800; letter-spacing:.14em; color:#93c5fd; }
+    .hero-pills { display:flex; flex-wrap:wrap; gap:7px; margin-top:18px; }
+    .hero-pills span { background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.16); padding:6px 9px; border-radius:999px; font-size:12px; }
+    .hero-score { min-width:135px; text-align:center; padding:18px; border:1px solid rgba(255,255,255,.18); border-radius:18px; background:rgba(255,255,255,.08); }
+    .hero-score div,.hero-score span { font-size:11px; letter-spacing:.12em; color:#bfdbfe; }
+    .hero-score strong { display:block; font-size:56px; line-height:1; margin:4px 0; }
+    .panel { background:#fff; border:1px solid var(--border); border-radius:16px; padding:18px; margin:14px 0; }
+    .section-head { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+    .section-head h2 { margin:0; font-size:18px; }
+    .section-head p { margin:4px 0 0; color:var(--muted); font-size:13px; }
+    .watchlist-items { display:flex; flex-wrap:wrap; gap:8px; margin-top:13px; }
+    .watch-chip { display:flex; align-items:center; gap:6px; padding:8px 10px; border:1px solid var(--border); border-radius:10px; background:#f8fafc; cursor:pointer; }
+    .watch-chip button { border:0; background:transparent; cursor:pointer; color:var(--muted); }
+    .footer-note { margin:22px 0 8px; padding:14px; border-radius:12px; background:#fff; border:1px solid var(--border); color:var(--muted); font-size:12px; line-height:1.5; }
+    .footer-note strong { color:var(--text); }
+    .footer-links { margin-top:6px; }
+    @media(max-width:700px) { .topbar,.hero { align-items:flex-start; } .hero { flex-direction:column; } .hero-score { width:100%; box-sizing:border-box; } .hero h1 { font-size:28px; } .top-actions { flex-direction:column; } }
+
+</style>
 </head>
 <body>
 
 <div class="container">
+    <div class="topbar">
+        <div class="brand"><span class="brand-mark">SM</span><div><strong>StockMeter</strong><small>Smart stock analysis</small></div></div>
+        <div class="top-actions">
+            <button class="ghost-btn" onclick="scrollToSection('watchlist-section')">⭐ Watchlist</button>
+            <button class="pro-btn" onclick="showPro()">⚡ StockMeter Pro</button>
+        </div>
+    </div>
+
+    <div class="hero">
+        <div>
+            <div class="eyebrow">100-POINT DECISION ENGINE</div>
+            <h1>Analyze a stock before you buy.</h1>
+            <p>Live LTP from Kotak Neo + TradingView scanner data + transparent Fundamental, Technical, Valuation and Risk scoring.</p>
+            <div class="hero-pills">
+                <span>40 Fundamental</span><span>25 Technical</span><span>20 Valuation</span><span>15 Risk</span>
+            </div>
+        </div>
+        <div class="hero-score"><div>MAX</div><strong>100</strong><span>POINTS</span></div>
+    </div>
+
 
     <!-- Header -->
     <div class="header-card">
-        <h1 class="header-title">📊 StockScore Live</h1>
-        <p class="subtitle">Kotak Neo live price + 100-Point Fundamental, Technical, Valuation & Risk Engine</p>
+        <h1 class="header-title">📈 StockMeter</h1>
+        <p class="subtitle">Measure the strength of every stock with a transparent 100-point model</p>
 
         <!-- Login Form -->
         <div id="login-section">
@@ -219,6 +272,15 @@
             <button onclick="analyzeStock()">Analyze Stock</button>
         </div>
         <div id="search-msg" class="status-msg"></div>
+    </div>
+
+
+    <div class="panel" id="watchlist-section">
+        <div class="section-head">
+            <div><h2>⭐ My Watchlist</h2><p>Saved in this browser. Click a stock to analyze it.</p></div>
+            <button class="ghost-btn" onclick="clearWatchlist()">Clear</button>
+        </div>
+        <div id="watchlist-items" class="watchlist-items"></div>
     </div>
 
     <!-- Results Section -->
@@ -293,9 +355,74 @@
 
     </div>
 
+
+    <div class="footer-note">
+        <strong>Important:</strong> StockMeter is a decision-support tool, not personal investment advice.
+        Market data can be delayed, unavailable or inaccurate. Always verify information before investing.
+        <div class="footer-links">StockMeter • Free analysis • Pro features coming soon</div>
+    </div>
+
 </div>
 
 <script>
+
+    const WATCH_KEY = "stockmeter_watchlist_v1";
+
+    function getWatchlist() {
+        try { return JSON.parse(localStorage.getItem(WATCH_KEY) || "[]"); }
+        catch (_) { return []; }
+    }
+
+    function saveWatchlist(items) {
+        localStorage.setItem(WATCH_KEY, JSON.stringify([...new Set(items)].slice(0, 30)));
+        renderWatchlist();
+    }
+
+    function addToWatchlist(symbol) {
+        symbol = (symbol || "").trim().toUpperCase();
+        if (!symbol) return;
+        const items = getWatchlist();
+        if (!items.includes(symbol)) items.push(symbol);
+        saveWatchlist(items);
+    }
+
+    function removeFromWatchlist(symbol) {
+        saveWatchlist(getWatchlist().filter(x => x !== symbol));
+    }
+
+    function clearWatchlist() {
+        localStorage.removeItem(WATCH_KEY);
+        renderWatchlist();
+    }
+
+    function renderWatchlist() {
+        const el = document.getElementById("watchlist-items");
+        if (!el) return;
+        const items = getWatchlist();
+        el.innerHTML = items.length
+            ? items.map(s => `<div class="watch-chip" onclick="analyzeFromWatchlist('${s}')"><span>⭐ ${s}</span><button onclick="event.stopPropagation();removeFromWatchlist('${s}')">×</button></div>`).join("")
+            : '<span style="color:#64748b;font-size:13px;">No stocks saved yet. Analyze a stock and add it to your watchlist.</span>';
+    }
+
+    function analyzeFromWatchlist(symbol) {
+        document.getElementById("symbol-input").value = symbol;
+        analyzeStock();
+    }
+
+    function scrollToSection(id) {
+        document.getElementById(id)?.scrollIntoView({behavior:"smooth"});
+    }
+
+    function showPro() {
+        alert("StockMeter Pro is coming soon: advanced analysis, larger usage limits, portfolio tools and alerts.");
+    }
+
+    function safeText(value) {
+        const d = document.createElement("div");
+        d.textContent = value == null ? "" : String(value);
+        return d.innerHTML;
+    }
+
     async function handleLogin() {
         const totp = document.getElementById('totp-input').value.trim();
         const msg = document.getElementById('login-msg');
@@ -372,18 +499,21 @@
 
             // Lists
             const posList = document.getElementById('list-positives');
-            posList.innerHTML = (data.why_buy || []).map(p => `<li>${p}</li>`).join('') || '<li>No major signals triggered</li>';
+            posList.innerHTML = (data.why_buy || []).map(p => `<li>${safeText(p)}</li>`).join('') || '<li>No major signals triggered</li>';
 
             const warnList = document.getElementById('list-warnings');
-            warnList.innerHTML = (data.risk_warnings || []).map(w => `<li>${w}</li>`).join('') || '<li>No immediate risk warnings</li>';
+            warnList.innerHTML = (data.risk_warnings || []).map(w => `<li>${safeText(w)}</li>`).join('') || '<li>No immediate risk warnings</li>';
 
             results.classList.remove('hidden');
+            addToWatchlist(data.symbol || company);
+            renderWatchlist();
 
         } catch (err) {
             msg.className = 'status-msg error';
             msg.innerText = '❌ ' + err.message;
         }
     }
+    renderWatchlist();
 </script>
 
 </body>
