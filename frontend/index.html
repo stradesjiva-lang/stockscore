@@ -1,460 +1,493 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>StockMeter — Unlimited Stock Intelligence</title>
-<style>
-*{box-sizing:border-box}body{margin:0;font-family:Inter,Arial,Helvetica,sans-serif;background:#f5f7fb;color:#0f172a}
-:root{--nav:#031326;--nav2:#071c32;--green:#09a95a;--blue:#2455d6;--purple:#7425d5;--orange:#f7901e;--border:#e6ebf2;--muted:#64748b}
-button,input{font:inherit}.layout{min-height:100vh;display:flex}.sidebar{width:255px;background:linear-gradient(180deg,#031326,#021022);color:#d9e5f2;position:fixed;left:0;top:0;bottom:0;z-index:20;padding:16px 14px;overflow:auto}.brand{display:flex;gap:10px;align-items:center;padding:0 5px 22px}.brand .sm{font-size:36px;font-weight:900;color:#08b866;letter-spacing:-2px}.brand strong{display:block;color:white;font-size:22px;line-height:1}.brand small{font-size:11px;color:#cbd5e1}.nav{border-top:1px solid #ffffff12;padding-top:12px}.nav button{width:100%;border:0;background:transparent;color:#d3deeb;text-align:left;padding:12px 10px;margin:2px 0;border-radius:8px;display:flex;align-items:center;gap:11px;font-size:13px;font-weight:650;cursor:pointer}.nav button:hover,.nav button.active{background:linear-gradient(90deg,#0c2b45,#0a2237);color:#00dc70}.nav button.active{box-shadow:inset 4px 0 #00c96b}.ico{width:18px;text-align:center}.badge{margin-left:auto;font-size:9px;padding:3px 7px;border-radius:5px;color:white;background:#6724d9}.badge.premium{background:#b87900}.badge.new{background:#087e5b}.upgrade{margin:26px 0 22px;border-radius:10px;padding:18px;background:linear-gradient(145deg,#2a115d,#1c0c44);border:1px solid #49219a}.upgrade .magic{font-size:25px}.upgrade h3{margin:5px 0;color:#fff;font-size:14px}.upgrade p{font-size:11px;color:#e0d5fa;line-height:1.5;margin:0 0 12px}.upgrade button{width:100%;border:0;border-radius:6px;padding:10px;background:#7426db;color:#fff;font-weight:800;cursor:pointer}.sidebottom{position:absolute;bottom:15px;left:20px;font-size:10px;color:#74869a;line-height:1.5}.main{margin-left:255px;width:calc(100% - 255px);min-width:0}.topbar{height:72px;background:#020f20;color:#fff;display:flex;align-items:center;padding:0 24px;gap:28px;position:sticky;top:0;z-index:15}.search{width:475px;display:flex}.search input{flex:1;border:0;padding:12px 15px;border-radius:6px 0 0 6px;outline:none}.search button{width:88px;border:0;background:#09b563;color:#fff;border-radius:0 6px 6px 0;font-weight:800;cursor:pointer}.topnav{display:flex;align-items:center;gap:33px;margin-left:auto}.topnav button{border:0;background:transparent;color:#fff;font-weight:700;cursor:pointer;font-size:13px}.topnav button.active{color:#00d96f;border-bottom:2px solid #00d96f;padding-bottom:9px}.bell{position:relative;font-size:20px}.dot{position:absolute;right:-6px;top:-8px;background:#f43f5e;color:#fff;border-radius:50%;font-size:9px;padding:3px 6px}.moon{font-size:20px}.avatar{width:38px;height:38px;border-radius:50%;background:#fff;color:#111;display:grid;place-items:center;font-weight:800}.content{padding:8px 14px 12px;max-width:1540px;margin:auto}.strip{height:33px;display:flex;align-items:center;justify-content:center;gap:27px;color:#034ed2;font-size:11px;font-weight:700}.strip span{display:flex;gap:6px;align-items:center}.columns{display:grid;grid-template-columns:minmax(0,1fr) 404px;gap:14px}.card{background:#fff;border:1px solid var(--border);border-radius:9px;box-shadow:0 2px 10px #0f172a08}.stockcard{padding:15px 16px 13px}.stockhead{display:flex;justify-content:space-between;align-items:center}.company{display:flex;align-items:center;gap:15px}.logo{width:60px;height:60px;border-radius:50%;background:linear-gradient(145deg,#1d6ce4,#5423c9);display:grid;place-items:center;color:#fff;font-size:19px;font-weight:900}.company h1{font-size:21px;margin:0 0 5px}.company p{font-size:12px;color:#52657c;margin:0}.watch{border:1px solid var(--border);background:white;border-radius:7px;padding:9px 13px;color:#243449;cursor:pointer;font-weight:650}.stockmetrics{display:grid;grid-template-columns:1fr 1fr 1.05fr;gap:17px;margin-top:10px}.pricebox{padding-top:8px}.label{font-size:12px;color:#43546b}.price{font-size:30px;font-weight:800;margin:12px 0 5px}.change{color:#00a65a;font-size:13px;font-weight:700}.subdate{font-size:11px;color:#738196;margin-top:9px}.scorebox{text-align:center;border:1px solid var(--border);border-radius:8px;padding:12px}.scoretitle{font-size:13px;font-weight:800}.score{font-size:68px;line-height:1;color:#08aa59;font-weight:800;margin-top:5px}.score small{font-size:22px;color:#26364b;font-weight:500}.buy{display:inline-flex;align-items:center;gap:7px;background:#08ad5c;color:#fff;border-radius:20px;padding:8px 20px;margin:5px 0;font-weight:900}.quality{font-size:12px;color:#475569}.fair{border-left:1px solid var(--border)}.fair .r{display:flex;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #edf1f5;font-size:12px}.fair .r:last-child{border-bottom:0}.positive{color:#05a757;font-weight:800}.confidence{display:flex;align-items:center;gap:10px}.line{width:105px;height:5px;background:#e5e7eb;border-radius:5px;overflow:hidden}.line i{display:block;height:100%;background:#08ae5b}.scorecards{display:grid;grid-template-columns:repeat(4,1fr);margin-top:13px}.sc{padding:14px 15px;border-right:1px solid var(--border)}.sc:last-child{border-right:0}.sc h4{margin:0 0 8px;font-size:12px}.sc .num{font-size:20px;font-weight:800}.progress{height:6px;background:#e8edf4;border-radius:5px;margin:9px 0 6px}.progress i{display:block;height:100%;border-radius:5px}.sc small{display:block;text-align:center;color:#53637a}.blue{color:#1649c9}.green{color:#079b53}.purple{color:#7126d8}.orange{color:#ee7e09}.bgblue{background:#2557d6}.bggreen{background:#09a95a}.bgpurple{background:#7b2dde}.bgorange{background:#f18b1d}.breakchart{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;margin-top:13px}.breakdown{padding:15px}.title{font-size:16px;font-weight:800;margin:0 0 13px}.bdgrid{display:grid;grid-template-columns:repeat(4,1fr)}.bd{padding:0 12px;border-right:1px solid var(--border)}.bd:last-child{border:0}.bd h4{font-size:12px;margin:0 0 14px}.metric{display:flex;justify-content:space-between;padding:7px 0;font-size:11px;border-bottom:1px dashed #e5e9ef}.details{color:#1649c9;font-size:11px;margin-top:16px;display:block}.chart{padding:15px}.chartbox{height:215px;position:relative;border-bottom:1px solid #dfe5ec;background:repeating-linear-gradient(to bottom,#fff,#fff 42px,#eef2f7 43px)}.fakechart{position:absolute;inset:35px 10px 10px;overflow:hidden}.fakechart svg{width:100%;height:100%}.periods{display:flex;gap:7px;justify-content:center;margin-bottom:8px}.periods button{border:1px solid var(--border);background:white;border-radius:5px;padding:5px 10px;font-size:10px}.periods .on{background:#09ad5c;color:#fff;border-color:#09ad5c}.chartstats{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:9px;text-align:center;font-size:9px}.chartstats b{display:block;color:#08a75a;font-size:10px}.news{padding:15px}.newshead{display:flex;justify-content:space-between;align-items:center}.newshead h3{margin:0;font-size:15px}.view{color:#074bd1;font-size:11px;font-weight:700}.tabs{display:flex;gap:7px;margin:15px 0}.tabs button{border:1px solid var(--border);background:white;border-radius:6px;padding:6px 11px;font-size:10px}.tabs .on{background:#08ad5c;color:white}.newsitem{display:grid;grid-template-columns:72px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid #edf1f5}.thumb{height:51px;border-radius:5px;background:#092d57;color:#fff;display:grid;place-items:center;font-weight:900;font-size:14px}.newsitem b{font-size:11px;line-height:1.35}.meta{font-size:9px;color:#6c7b8f;margin-top:6px}.watchlist{padding:15px;margin-top:14px}.watchlist table{width:100%;border-collapse:collapse;font-size:11px}.watchlist th{font-weight:500;color:#65748a;text-align:left;padding-bottom:8px}.watchlist td{padding:8px 0;border-top:1px solid #edf1f5}.rightscore{color:#08a95a;font-weight:800;text-align:right}.rightprice{text-align:right}.quick{display:grid;grid-template-columns:repeat(6,1fr);margin-top:14px}.q{padding:15px;text-align:center;border-right:1px solid var(--border)}.q:last-child{border:0}.qicon{font-size:28px;margin-bottom:10px}.q h4{font-size:12px;margin:0 0 7px}.q p{font-size:10px;color:#596a80;line-height:1.4;min-height:29px}.q button{background:#fff;border:1px solid #1d62ed;color:#1452ce;border-radius:5px;padding:6px 10px;font-size:10px;font-weight:700}.footer{font-size:10px;color:#0d4bc8;margin:9px 8px}.section{display:none}.section.active{display:block}.simple{padding:25px}.simple h2{margin-top:0}.simple input{padding:10px;border:1px solid var(--border);border-radius:7px}.simple button{padding:10px 15px;border:0;background:#09ad5c;color:white;border-radius:7px;font-weight:800}.resulttable{width:100%;border-collapse:collapse;margin-top:15px}.resulttable th,.resulttable td{padding:9px;border-bottom:1px solid var(--border);font-size:12px;text-align:left}.resulttable th{background:#f7f9fc}.mobilemenu{display:none}
-@media(max-width:1250px){.columns{grid-template-columns:1fr}.news,.watchlist{margin-top:14px}.breakchart{grid-template-columns:1fr}.quick{grid-template-columns:repeat(3,1fr)}.q:nth-child(3){border-right:0}}
-@media(max-width:900px){.sidebar{width:220px}.main{margin-left:220px;width:calc(100% - 220px)}.topnav{gap:12px}.topnav button:nth-child(3),.topnav button:nth-child(4),.topnav button:nth-child(5){display:none}.search{width:380px}.bdgrid{grid-template-columns:1fr 1fr}.bd:nth-child(2){border-right:0}.scorecards{grid-template-columns:1fr 1fr}.sc:nth-child(2){border-right:0}}
-@media(max-width:720px){.sidebar{display:none}.main{margin-left:0;width:100%}.mobilemenu{display:block}.topbar{padding:0 10px;gap:8px}.search{width:auto;flex:1}.topnav{display:none}.content{padding:5px}.stockmetrics{grid-template-columns:1fr}.fair{border-left:0;border-top:1px solid var(--border)}.quick{grid-template-columns:1fr 1fr}.bdgrid{grid-template-columns:1fr}.bd{border-right:0;border-bottom:1px solid var(--border);padding:12px 0}.company h1{font-size:17px}.price{font-size:25px}}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockMeter Dashboard - Pro Edition</title>
+    
+    <!-- Tailwind CSS for Layout & Styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Chart.js for Price Chart -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Tailwind Config for exact color matching -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        brand: {
+                            sidebar: '#0f1627',
+                            sidebarhover: '#1e293b',
+                            green: '#00b852',
+                            bg: '#f8f9fa',
+                            purple: '#7c3aed',
+                            premium: '#eab308',
+                            textdark: '#1e293b',
+                            textgray: '#64748b'
+                        }
+                    },
+                    boxShadow: { 'card': '0 2px 10px rgba(0, 0, 0, 0.03)' }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f8f9fa; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
 </head>
-<body>
-<div class="layout">
-<aside class="sidebar">
- <div class="brand"><div class="sm">SM</div><div><strong>StockMeter</strong><small>Unlimited Stock Intelligence</small></div></div>
- <div class="nav">
-  <button class="active" onclick="show('dashboard',this)"><span class="ico">⌂</span>Dashboard</button>
-  <button onclick="show('analyze',this)"><span class="ico">⌕</span>Analyze Stock</button>
-  <button onclick="show('compare',this)"><span class="ico">♧</span>Peer Comparison <span class="badge">PRO</span></button>
-  <button onclick="show('screener',this)"><span class="ico">▽</span>Stock Screener <span class="badge">PRO</span></button>
-  <button onclick="show('portfolio',this)"><span class="ico">▣</span>Portfolio Analyzer <span class="badge premium">PREMIUM</span></button>
-  <button onclick="show('history',this)"><span class="ico">◷</span>Score History <span class="badge">PRO</span></button>
-  <button onclick="show('alerts',this)"><span class="ico">♧</span>Alerts <span class="badge">PRO</span></button>
-  <button onclick="show('news',this)"><span class="ico">▤</span>Market News <span class="badge new">NEW</span></button>
-  <button onclick="show('watchlist',this)"><span class="ico">☆</span>Watchlist</button>
-  <button onclick="show('plans',this)"><span class="ico">▤</span>My Reports</button>
-  <button onclick="show('plans',this)"><span class="ico">?</span>How It Works</button>
- </div>
- <div class="upgrade"><div class="magic">🛠</div><h3>Upgrade for More</h3><p>Get advanced analytics, portfolio tools, alerts & more.</p><button onclick="show('plans')">View Plans</button></div>
- <div class="sidebottom">© 2026 StockMeter<br>All rights reserved.<br><br>● &nbsp;● &nbsp;▶ &nbsp;in</div>
-</aside>
+<body class="font-sans text-brand-textdark overflow-hidden flex h-screen">
 
-<main class="main">
-<header class="topbar">
- <button class="mobilemenu" onclick="document.querySelector('.sidebar').style.display=document.querySelector('.sidebar').style.display==='block'?'none':'block'">☰</button>
- <div class="search"><input id="search" placeholder="Search or enter stock (e.g. TCS, RELIANCE, INFY)" onkeydown="if(event.key==='Enter')analyze(this.value)"><button onclick="analyze(document.getElementById('search').value)">Analyze</button></div>
- <nav class="topnav"><button class="active" onclick="show('dashboard',this)">Dashboard</button><button onclick="show('screener',this)">Screener</button><button onclick="show('portfolio',this)">Portfolio</button><button onclick="show('news',this)">Market News</button><button onclick="show('alerts',this)">Alerts</button><span class="bell">♧<i class="dot">3</i></span><span class="moon">☾</span><span class="avatar">U</span></nav>
-</header>
-<div class="content">
-<div class="strip"><span>♾ Unlimited Analyses</span><b>•</b><span>◉ No Limits</span><b>•</b><span>◉ Real-time Data</span><b>•</b><span>◈ 100-Point Stock Score</span><b>•</b><span>↗ All Features Unlocked</span></div>
+    <!-- SIDEBAR -->
+    <aside class="w-64 bg-brand-sidebar text-white flex flex-col h-full flex-shrink-0 relative z-20">
+        <div class="h-16 flex items-center px-6 border-b border-gray-800">
+            <div class="flex items-center gap-2">
+                <div class="bg-brand-green text-white font-bold text-xl px-2 py-1 rounded">SM</div>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight">StockMeter</h1>
+                    <p class="text-[10px] text-gray-400">Pro Edition</p>
+                </div>
+            </div>
+        </div>
 
-<section id="dashboard" class="section active">
-<!-- Reference sequence:
-1. Stock header/current price/score/fair-value card + Market News
-2. Fundamental/Technical/Valuation/Risk score strip
-3. Detailed Score Breakdown + Price Chart + My Watchlist
-4. Peer Comparison + Stock Screener + Portfolio Analyzer + Score History + Alerts + Daily Market Report
-5. Disclaimer
--->
-<div class="columns">
-<div>
-<div class="card stockcard">
- <div class="stockhead"><div class="company"><div class="logo" id="logo">TCS</div><div><h1 id="company">Tata Consultancy Services Ltd.</h1><p>NSE: <b id="symbol">TCS</b> &nbsp; | &nbsp; IT Services</p></div></div><button class="watch" id="watchBtn" onclick="watch()">☆ Add to Watchlist</button></div>
- <div class="stockmetrics">
-  <div class="pricebox"><div class="label">Current Price</div><div class="price" id="price">₹3,123.45</div><div class="change" id="change">▲ 42.35 (1.38%)</div><div class="subdate" id="date">As on 17 May 2026, 03:30 PM</div></div>
-  <div class="scorebox"><div class="scoretitle">STOCKMETER SCORE ⓘ</div><div class="score" id="score">78<small>/100</small></div><div class="buy" id="decision">↗ BUY</div><div class="quality">Good Quality Stock</div></div>
-  <div class="fair"><div class="r"><b>Fair Value</b><strong id="fair">₹3,550.00</strong></div><div class="r"><b>Upside Potential</b><strong class="positive" id="upside">+13.66%</strong></div><div class="r"><b>Buy Zone</b><strong id="zone">₹2,950 – ₹3,150</strong></div><div class="r"><b>Margin of Safety</b><strong id="mos">12.70%</strong></div><div class="r"><b>Data Confidence</b><div class="confidence"><div class="line"><i id="confline" style="width:92%"></i></div><strong id="conf">92%</strong></div></div></div>
- </div>
-</div>
-<div class="card scorecards">
- <div class="sc"><h4 class="blue">🏛 Fundamental</h4><div class="num" id="fscore">31/40</div><div class="progress"><i class="bgblue" id="fp" style="width:77.5%"></i></div><small>Strong</small></div>
- <div class="sc"><h4 class="green">⌁ Technical</h4><div class="num" id="tscore">19/25</div><div class="progress"><i class="bggreen" id="tp" style="width:76%"></i></div><small>Good</small></div>
- <div class="sc"><h4 class="purple">● Valuation</h4><div class="num" id="vscore">16/20</div><div class="progress"><i class="bgpurple" id="vp" style="width:80%"></i></div><small>Good</small></div>
- <div class="sc"><h4 class="orange">⬟ Risk</h4><div class="num" id="rscore">12/15</div><div class="progress"><i class="bgorange" id="rp" style="width:80%"></i></div><small style="color:#f07800">Moderate</small></div>
-</div>
-<div class="breakchart">
- <div class="card breakdown"><h2 class="title">Detailed Score Breakdown ⓘ</h2><div class="bdgrid" id="breakdown"></div></div>
- <div class="card chart"><h2 class="title">Price Chart</h2><div class="periods"><button>1M</button><button>3M</button><button>6M</button><button class="on">1Y</button><button>3Y</button><button>5Y</button></div><div class="chartbox"><div class="fakechart"><svg viewBox="0 0 600 210" preserveAspectRatio="none"><defs><linearGradient id="fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#31c878" stop-opacity=".32"/><stop offset="1" stop-color="#31c878" stop-opacity=".02"/></linearGradient></defs><path d="M0 180 L18 174 L30 177 L43 163 L57 166 L70 153 L82 159 L95 145 L108 150 L120 135 L132 143 L146 124 L159 132 L172 119 L185 126 L198 108 L211 115 L224 100 L237 111 L250 90 L263 103 L276 82 L290 93 L303 73 L316 82 L329 65 L342 73 L355 52 L369 62 L382 47 L395 56 L408 38 L421 51 L434 42 L447 29 L460 44 L474 26 L488 38 L501 20 L515 30 L529 14 L543 22 L557 7 L570 14 L585 1 L600 8 L600 210 L0 210 Z" fill="url(#fill)"/><path d="M0 180 L18 174 L30 177 L43 163 L57 166 L70 153 L82 159 L95 145 L108 150 L120 135 L132 143 L146 124 L159 132 L172 119 L185 126 L198 108 L211 115 L224 100 L237 111 L250 90 L263 103 L276 82 L290 93 L303 73 L316 82 L329 65 L342 73 L355 52 L369 62 L382 47 L395 56 L408 38 L421 51 L434 42 L447 29 L460 44 L474 26 L488 38 L501 20 L515 30 L529 14 L543 22 L557 7 L570 14 L585 1 L600 8" fill="none" stroke="#09ad5c" stroke-width="3"/></svg></div></div><div class="chartstats"><div>1M<b>3.21%</b></div><div>3M<b>11.48%</b></div><div>6M<b>18.22%</b></div><div>1Y<b>28.74%</b></div><div>52W High<b style="color:#1e293b">₹3,246.80</b></div></div></div>
-</div>
-<div class="card quick">
- <div class="q"><div class="qicon">👥</div><h4>Peer Comparison</h4><p>Compare with industry peers side by side.</p><button onclick="show('compare')">Compare Now</button></div>
- <div class="q"><div class="qicon">▼</div><h4>Stock Screener</h4><p>Find best stocks using advanced filters.</p><button onclick="show('screener')">Open Screener</button></div>
- <div class="q"><div class="qicon">▣</div><h4>Portfolio Analyzer</h4><p>Track performance, P/L, allocation & risk.</p><button onclick="show('portfolio')">Analyze Portfolio</button></div>
- <div class="q"><div class="qicon">↗</div><h4>Score History</h4><p>See historical score movement over time.</p><button onclick="show('history')">View History</button></div>
- <div class="q"><div class="qicon">♧</div><h4>Alerts</h4><p>Get notified on score & price movements.</p><button onclick="show('alerts')">Manage Alerts</button></div>
- <div class="q"><div class="qicon">▤</div><h4>Daily Market Report</h4><p>Get daily top picks, trends & insights.</p><button onclick="show('news')">View Report</button></div>
-</div>
-</div>
+        <div class="flex-1 overflow-y-auto py-4 custom-scrollbar">
+            <nav class="space-y-1">
+                <a href="#" class="flex items-center px-6 py-3 bg-gray-800/50 text-brand-green border-l-4 border-brand-green">
+                    <i class="fa-solid fa-house w-6 text-center"></i><span class="ml-3 font-medium text-sm">Dashboard</span>
+                </a>
+                <a href="#" class="flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-brand-sidebarhover transition">
+                    <i class="fa-solid fa-magnifying-glass-chart w-6 text-center"></i><span class="ml-3 text-sm">Analyze Stock</span>
+                </a>
+                
+                <div class="mt-4 mb-2 px-6"></div> 
 
-<aside>
-<div class="card news"><div class="newshead"><h3>Market News</h3><span class="view" onclick="show('news')">View All</span></div><div class="tabs"><button class="on">All</button><button>India Market</button><button>NIFTY</button><button>Stocks</button><button>RBI</button><button>SEBI</button></div><div id="newsList"></div></div>
-<div class="card watchlist"><div class="newshead"><h3>My Watchlist</h3><span class="view" onclick="show('watchlist')">View All</span></div><table><thead><tr><th>Stock</th><th>Price</th><th style="text-align:right">Score</th></tr></thead><tbody id="watchTable"><tr><td>⭐ <b>TCS</b></td><td class="rightprice">₹3,123.45</td><td class="rightscore">78</td></tr><tr><td>⭐ <b>RELIANCE</b></td><td class="rightprice">₹2,856.20</td><td class="rightscore">72</td></tr><tr><td>☆ <b>INFY</b></td><td class="rightprice">₹1,543.30</td><td class="rightscore" style="color:#ee7e09">69</td></tr><tr><td>⭐ <b>HDFCBANK</b></td><td class="rightprice">₹1,647.80</td><td class="rightscore">81</td></tr><tr><td>⭐ <b>LT</b></td><td class="rightprice">₹3,412.15</td><td class="rightscore">74</td></tr></tbody></table><button class="watch" style="width:100%;margin-top:9px;color:#1649c9">View Full Watchlist</button></div>
-</aside>
-</div>
-<div class="footer"><b>Disclaimer:</b> StockMeter is an analytical tool and not a financial advisor. All data is for informational purposes only. Please do your own research before investing.</div>
-</section>
+                <a href="#" class="flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-brand-sidebarhover transition justify-between">
+                    <div class="flex items-center"><i class="fa-solid fa-users w-6 text-center"></i><span class="ml-3 text-sm">Peer Comparison</span></div>
+                </a>
+                <a href="#" class="flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-brand-sidebarhover transition justify-between">
+                    <div class="flex items-center"><i class="fa-solid fa-filter w-6 text-center"></i><span class="ml-3 text-sm">Stock Screener</span></div>
+                </a>
+                <a href="#" class="flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-brand-sidebarhover transition justify-between">
+                    <div class="flex items-center"><i class="fa-solid fa-briefcase w-6 text-center"></i><span class="ml-3 text-sm">Portfolio Analyzer</span></div>
+                </a>
+                <a href="#" class="flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-brand-sidebarhover transition justify-between">
+                    <div class="flex items-center"><i class="fa-solid fa-clock-rotate-left w-6 text-center"></i><span class="ml-3 text-sm">Score History</span></div>
+                </a>
+                <a href="#" class="flex items-center px-6 py-3 text-gray-300 hover:text-white hover:bg-brand-sidebarhover transition justify-between">
+                    <div class="flex items-center"><i class="fa-solid fa-bell w-6 text-center"></i><span class="ml-3 text-sm">Alerts</span></div>
+                </a>
+            </nav>
 
-<section id="analyze" class="section"><div class="card simple"><h2>Analyze Stock</h2><p>Unlimited stock analysis using the connected backend.</p><input id="a" placeholder="TCS" value="TCS"><button onclick="analyze(document.getElementById('a').value)">Analyze</button></div></section>
-<section id="compare" class="section"><div class="card simple"><h2>Peer Comparison</h2><p>Enter comma-separated NSE symbols.</p><input id="cmp" placeholder="TCS,INFY,HCLTECH,WIPRO"><button onclick="compare()">Compare</button><div id="cmpout"></div></div></section>
-<section id="screener" class="section"><div class="card simple"><h2>Stock Screener</h2><p>Enter comma-separated symbols and optional minimum score.</p><input id="scr" placeholder="TCS,INFY,RELIANCE,HDFCBANK"><input id="minscore" type="number" placeholder="Min score" style="margin-left:7px;width:120px"><button onclick="screen()">Find</button><div id="scrout"></div></div></section>
-<section id="portfolio" class="section"><div class="card simple"><h2>Portfolio Analyzer</h2><p>Format: TCS:20:3000,INFY:30:1400</p><input id="port" style="width:70%" placeholder="TCS:20:3000,INFY:30:1400"><button onclick="portfolio()">Analyze</button><div id="portout"></div></div></section>
-<section id="history" class="section"><div class="card simple"><h2>Score History</h2><input id="hist" placeholder="TCS"><button onclick="history()">Load</button><div id="histout"></div></div></section>
-<section id="alerts" class="section"><div class="card simple"><h2>Alerts</h2><p>Check a stock against a score threshold.</p><input id="al" placeholder="TCS"><input id="almin" type="number" placeholder="Min score" style="width:120px"><button onclick="alertCheck()">Check</button><div id="alout"></div></div></section>
-<section id="news" class="section"><div class="card simple"><h2>Market News</h2><input id="nq" value="Indian stock market"><button onclick="loadNews()">Refresh</button><div id="fullnews"></div></div></section>
-<section id="watchlist" class="section"><div class="card simple"><h2>Watchlist</h2><div id="fullwatch"></div></div></section>
-<section id="plans" class="section"><div class="card simple"><h2>All Features Unlocked</h2><p>Unlimited analysis, Pro and Premium modules are currently available without charge.</p><ul><li>Peer Comparison</li><li>Advanced Screener</li><li>Portfolio Analyzer</li><li>Score History</li><li>Alerts</li><li>Market News</li></ul></div></section>
-</div>
-</main></div>
+            <div class="px-6 pb-6 text-xs text-gray-500 mt-10">
+                <button id="logoutBtnSide" class="w-full text-red-400 hover:text-red-300 font-medium py-2 mb-4 border border-red-900 rounded hidden">Logout from Neo</button>
+                <p>© 2026 StockMeter</p>
+                <p class="mb-3">All rights reserved.</p>
+            </div>
+        </div>
+    </aside>
 
-<script>
-const $ = id => document.getElementById(id);
-let current = "TCS";
-let watchset = JSON.parse(localStorage.getItem("sm_watch") || '["TCS","RELIANCE","INFY","HDFCBANK","LT"]');
-let sessionId = localStorage.getItem("sm_session") || "";
-let pendingAnalysis = null;
+    <!-- MAIN CONTENT AREA -->
+    <main class="flex-1 flex flex-col h-full relative">
+        
+        <!-- TOP NAVBAR -->
+        <header class="h-16 bg-brand-sidebar flex items-center justify-between px-6 z-10">
+            <!-- Search -->
+            <div class="flex items-center w-full max-w-xl">
+                <div class="relative w-full flex">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fa-solid fa-magnifying-glass text-gray-400 text-sm"></i>
+                    </div>
+                    <input type="text" id="searchInput" placeholder="Search or enter stock (e.g. TCS, RELIANCE, INFY)" class="w-full pl-10 pr-4 py-2 rounded-l-md text-sm outline-none text-gray-700 font-semibold uppercase">
+                    <button id="analyzeBtn" class="bg-brand-green hover:bg-green-600 text-white px-6 py-2 rounded-r-md text-sm font-medium transition whitespace-nowrap w-32">Analyze</button>
+                </div>
+            </div>
 
-function show(id, btn) {
-  document.querySelectorAll(".section").forEach(x => x.classList.remove("active"));
-  if ($(id)) $(id).classList.add("active");
-  document.querySelectorAll(".nav button,.topnav button").forEach(x => x.classList.remove("active"));
-  if (btn) btn.classList.add("active");
-  window.scrollTo(0, 0);
-  if (id === "news") loadNews();
-  if (id === "watchlist") renderWatch();
-  if (id === "alerts") loadAlerts();
-}
+            <!-- Right Nav -->
+            <div class="flex items-center gap-6 text-white text-sm">
+                <a href="#" class="font-medium text-brand-green border-b-2 border-brand-green pb-5 mt-5">Dashboard</a>
+                <a href="#" class="text-gray-300 hover:text-white transition">Market News</a>
+                
+                <div class="flex items-center gap-4 ml-2 border-l border-gray-700 pl-6">
+                    <div class="relative cursor-pointer">
+                        <i class="fa-regular fa-bell text-lg text-gray-300 hover:text-white"></i>
+                        <span class="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center border-2 border-brand-sidebar">0</span>
+                    </div>
+                    <div class="w-8 h-8 rounded-full bg-brand-green text-white flex items-center justify-center font-bold text-sm cursor-pointer ml-1" title="Connected">✔</div>
+                </div>
+            </div>
+        </header>
 
-function fmt(v) {
-  return v == null || v === "" || Number.isNaN(Number(v))
-    ? "—"
-    : Number(v).toLocaleString("en-IN", {maximumFractionDigits: 2});
-}
-function pct(v) {
-  return v == null || Number.isNaN(Number(v)) ? "—" : Number(v).toFixed(2) + "%";
-}
-function esc(v) {
-  return String(v ?? "").replace(/[&<>"']/g, c => ({
-    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
-  }[c]));
-}
+        <!-- SUB HEADER -->
+        <div class="bg-white border-b border-gray-200 py-2.5 px-6 flex justify-center gap-8 text-xs font-medium text-blue-800 shadow-sm">
+            <span class="flex items-center gap-1.5"><i class="fa-solid fa-infinity text-blue-600"></i> Pro Analysis Enabled</span>
+            <span class="text-gray-300">•</span>
+            <span class="flex items-center gap-1.5"><i class="fa-solid fa-bolt text-blue-600"></i> Multi-Session Active</span>
+            <span class="text-gray-300">•</span>
+            <span class="flex items-center gap-1.5 text-brand-green"><i class="fa-solid fa-square-check"></i> Connected to Kotak Neo</span>
+        </div>
 
-function openLogin() {
-  $("loginModal").style.display = "flex";
-  $("totp").value = "";
-  $("loginError").style.display = "none";
-  setTimeout(() => $("totp").focus(), 50);
-}
-function closeLogin() {
-  $("loginModal").style.display = "none";
-}
+        <!-- SCROLLABLE DASHBOARD CONTENT -->
+        <div class="flex-1 overflow-y-auto p-6">
+            <div class="max-w-[1400px] mx-auto flex flex-col gap-6">
 
-async function doLogin() {
-  const totp = $("totp").value.trim();
-  if (!/^\d{6}$/.test(totp)) {
-    $("loginError").textContent = "TOTP must be exactly 6 digits.";
-    $("loginError").style.display = "block";
-    return;
-  }
+                <div class="grid grid-cols-12 gap-6">
+                    <!-- LEFT COLUMN -->
+                    <div class="col-span-12 xl:col-span-9 flex flex-col gap-6">
+                        
+                        <!-- MAIN CARD -->
+                        <div class="bg-white rounded-xl shadow-card p-6 border border-gray-100 flex flex-col lg:flex-row gap-6 relative">
+                            <!-- Basic Info -->
+                            <div class="flex-1 border-r border-gray-100 pr-6">
+                                <div class="flex justify-between items-start mb-6">
+                                    <div class="flex items-center gap-4">
+                                        <div id="uiLogo" class="w-14 h-14 rounded-full bg-blue-700 text-white flex items-center justify-center text-xl font-bold">SM</div>
+                                        <div>
+                                            <h2 id="uiTitle" class="text-xl font-bold text-gray-900 uppercase">Search a Stock</h2>
+                                            <p id="uiSymbol" class="text-sm text-brand-textgray mt-0.5">NSE <span class="mx-2 text-gray-300">|</span> Live Data</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="mt-8">
+                                    <p class="text-sm text-brand-textgray mb-1">Current Price (LTP)</p>
+                                    <div class="flex items-end gap-3 mb-1">
+                                        <h3 id="uiPrice" class="text-4xl font-bold text-gray-900 tracking-tight">₹0.00</h3>
+                                    </div>
+                                </div>
+                            </div>
 
-  $("loginBtn").disabled = true;
-  $("loginBtn").textContent = "Logging in...";
-  try {
-    const r = await fetch("/api/login", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({totp})
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.detail || "Kotak Neo login failed.");
-    sessionId = d.session_id || "";
-    localStorage.setItem("sm_session", sessionId);
-    closeLogin();
+                            <!-- Score -->
+                            <div class="px-6 flex flex-col items-center justify-center text-center">
+                                <h4 class="text-xs font-bold tracking-wider text-gray-500 uppercase mb-4 flex items-center gap-1">StockMeter Score</h4>
+                                <div class="relative w-32 h-32 flex items-center justify-center mb-4">
+                                    <svg class="absolute inset-0 w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                                        <circle cx="50" cy="50" r="45" fill="none" stroke="#f1f5f9" stroke-width="8"></circle>
+                                        <circle id="uiScoreRing" cx="50" cy="50" r="45" fill="none" stroke="#00b852" stroke-width="8" stroke-dasharray="283" stroke-dashoffset="0" stroke-linecap="round"></circle>
+                                    </svg>
+                                    <div class="text-center z-10 relative top-1">
+                                        <span id="uiScore" class="text-5xl font-bold text-brand-green">--</span>
+                                        <span class="text-gray-400 text-xl">/100</span>
+                                    </div>
+                                </div>
+                                <button id="uiDecisionBtn" class="bg-gray-200 text-gray-700 px-8 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 shadow-md transition">
+                                    <i class="fa-solid fa-minus"></i> WAITING
+                                </button>
+                            </div>
 
-    if (pendingAnalysis) {
-      const s = pendingAnalysis;
-      pendingAnalysis = null;
-      await analyze(s);
-    }
-  } catch (e) {
-    $("loginError").textContent = e.message;
-    $("loginError").style.display = "block";
-  } finally {
-    $("loginBtn").disabled = false;
-    $("loginBtn").textContent = "Login";
-  }
-}
+                            <!-- Valuation Metrics -->
+                            <div class="flex-1 pl-6 border-l border-gray-100 flex flex-col justify-center">
+                                <div class="space-y-4">
+                                    <div class="flex justify-between items-center pb-2 border-b border-gray-50">
+                                        <span class="text-sm font-medium text-brand-textdark">Fair Value</span>
+                                        <span id="uiFairValue" class="text-sm font-bold">--</span>
+                                    </div>
+                                    <div class="flex justify-between items-center pb-2 border-b border-gray-50">
+                                        <span class="text-sm font-medium text-brand-textdark">Upside Potential</span>
+                                        <span id="uiUpside" class="text-sm font-bold text-brand-green">--</span>
+                                    </div>
+                                    <div class="flex justify-between items-center pb-2 border-b border-gray-50">
+                                        <span class="text-sm font-medium text-brand-textdark">Buy Zone</span>
+                                        <span id="uiBuyZone" class="text-sm font-bold">--</span>
+                                    </div>
+                                    <div class="flex justify-between items-center pb-2 border-b border-gray-50">
+                                        <span class="text-sm font-medium text-brand-textdark">Margin of Safety</span>
+                                        <span id="uiMargin" class="text-sm font-bold">--</span>
+                                    </div>
+                                    <div class="flex justify-between items-center pt-1">
+                                        <span class="text-sm font-medium text-brand-textdark">Data Confidence</span>
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-24 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                                <div id="uiConfidenceBar" class="h-full bg-brand-green transition-all duration-500" style="width: 0%"></div>
+                                            </div>
+                                            <span id="uiConfidenceTxt" class="text-sm font-bold text-brand-green">0%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
 
-async function apiFetch(url, options = {}) {
-  const headers = new Headers(options.headers || {});
-  if (sessionId) headers.set("X-StockMeter-Session", sessionId);
-  const response = await fetch(url, {...options, headers});
+                        <!-- CATEGORY SCORES -->
+                        <div class="grid grid-cols-4 gap-6">
+                            <!-- Foundational Categories -->
+                            <div class="bg-white rounded-xl shadow-card p-5 border border-gray-100 flex flex-col relative overflow-hidden">
+                                <p class="text-xs font-bold text-blue-800 tracking-wide uppercase mb-1">Fundamental</p>
+                                <div class="flex items-baseline gap-1"><span id="uiFundScore" class="text-2xl font-bold text-gray-900">-</span><span class="text-sm text-gray-500">/40</span></div>
+                            </div>
+                            <div class="bg-white rounded-xl shadow-card p-5 border border-gray-100 flex flex-col relative overflow-hidden">
+                                <p class="text-xs font-bold text-green-700 tracking-wide uppercase mb-1">Technical</p>
+                                <div class="flex items-baseline gap-1"><span id="uiTechScore" class="text-2xl font-bold text-gray-900">-</span><span class="text-sm text-gray-500">/25</span></div>
+                            </div>
+                            <div class="bg-white rounded-xl shadow-card p-5 border border-gray-100 flex flex-col relative overflow-hidden">
+                                <p class="text-xs font-bold text-purple-700 tracking-wide uppercase mb-1">Valuation</p>
+                                <div class="flex items-baseline gap-1"><span id="uiValScore" class="text-2xl font-bold text-gray-900">-</span><span class="text-sm text-gray-500">/20</span></div>
+                            </div>
+                            <div class="bg-white rounded-xl shadow-card p-5 border border-gray-100 flex flex-col relative overflow-hidden">
+                                <p class="text-xs font-bold text-orange-600 tracking-wide uppercase mb-1">Risk</p>
+                                <div class="flex items-baseline gap-1"><span id="uiRiskScore" class="text-2xl font-bold text-gray-900">-</span><span class="text-sm text-gray-500">/15</span></div>
+                            </div>
+                        </div>
 
-  if (response.status === 401) {
-    sessionId = "";
-    localStorage.removeItem("sm_session");
-    throw Object.assign(new Error("LOGIN_REQUIRED"), {loginRequired:true});
-  }
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || "Request failed.");
-  return data;
-}
+                    </div>
 
-async function analyze(s) {
-  s = (s || "").trim().toUpperCase();
-  if (!s) return;
-  current = s;
+                    <!-- RIGHT COLUMN -->
+                    <div class="col-span-12 xl:col-span-3 flex flex-col gap-6">
+                        <div class="bg-white rounded-xl shadow-card p-5 border border-gray-100 flex-1">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="font-bold text-gray-900 text-base">Key Insights</h3>
+                            </div>
+                            <div id="uiInsights" class="space-y-3 text-sm">
+                                <p class="text-gray-500 text-xs italic">Analyze a stock to see insights.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
 
-  try {
-    const d = await apiFetch("/api/score", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({company:s})
-    });
-    updateDashboard(d);
-    show("dashboard");
-  } catch (e) {
-    if (e.loginRequired) {
-      pendingAnalysis = s;
-      openLogin();
-      return;
-    }
-    alert("Analysis error: " + e.message);
-  }
-}
-
-function set(id, v) {
-  if ($(id)) $(id).textContent = v;
-}
-
-function updateDashboard(d) {
-  $("company").textContent = d.company || d.symbol || current;
-  $("symbol").textContent = d.symbol || current;
-  $("logo").textContent = (d.symbol || current).slice(0,3);
-  $("price").textContent = "₹" + fmt(d.ltp);
-  $("score").innerHTML = (d.score ?? "—") + "<small>/100</small>";
-  $("decision").textContent = "↗ " + (d.decision || "—");
-
-  const f = d.fair_value_analysis || {};
-  $("fair").textContent = f.fair_value != null ? "₹" + fmt(f.fair_value) : "—";
-  $("upside").textContent = f.upside_pct != null ? pct(f.upside_pct) : "—";
-  $("zone").textContent = f.buy_zone || "—";
-  $("mos").textContent = f.margin_of_safety_pct != null ? pct(f.margin_of_safety_pct) : "—";
-
-  const conf = Number(d.data_confidence_pct || 0);
-  $("conf").textContent = conf.toFixed(1) + "%";
-  $("confline").style.width = Math.max(0, Math.min(100, conf)) + "%";
-
-  const b = d.breakdown || {};
-  set("fscore", `${b.fundamental?.score ?? 0}/40`);
-  set("tscore", `${b.technical?.score ?? 0}/25`);
-  set("vscore", `${b.valuation?.score ?? 0}/20`);
-  set("rscore", `${b.risk?.score ?? 0}/15`);
-
-  $("fp").style.width = ((b.fundamental?.score || 0) / 40 * 100) + "%";
-  $("tp").style.width = ((b.technical?.score || 0) / 25 * 100) + "%";
-  $("vp").style.width = ((b.valuation?.score || 0) / 20 * 100) + "%";
-  $("rp").style.width = ((b.risk?.score || 0) / 15 * 100) + "%";
-
-  renderBD(b);
-}
-
-function renderBD(b) {
-  const gs = [
-    ["FUNDAMENTAL", b.fundamental, "blue"],
-    ["TECHNICAL", b.technical, "green"],
-    ["VALUATION", b.valuation, "purple"],
-    ["RISK", b.risk, "orange"]
-  ];
-
-  $("breakdown").innerHTML = gs.map(g => {
-    const data = g[1]?.data || {};
-    const positives = g[1]?.positives || [];
-    const warnings = g[1]?.warnings || [];
-    const rows = Object.entries(data).slice(0, 6).map(x =>
-      `<div class="metric"><span>${esc(x[0].replaceAll("_"," "))}</span><b>${esc(fmt(x[1]))}</b></div>`
-    ).join("");
-
-    return `<div class="bd">
-      <h4 class="${g[2]}">${g[0]} (${g[1]?.score ?? 0}/${g[1]?.max ?? 0})</h4>
-      ${rows || `<div class="metric"><span>Data</span><b>Unavailable</b></div>`}
-      ${positives.slice(0,2).map(x => `<div style="font-size:9px;color:#079b53;margin-top:5px">✓ ${esc(x)}</div>`).join("")}
-      ${warnings.slice(0,2).map(x => `<div style="font-size:9px;color:#dc7b00;margin-top:5px">⚠ ${esc(x)}</div>`).join("")}
-      <a class="details">View Details →</a>
-    </div>`;
-  }).join("");
-}
-
-function watch() {
-  if (!watchset.includes(current)) watchset.push(current);
-  else watchset = watchset.filter(x => x !== current);
-  localStorage.setItem("sm_watch", JSON.stringify(watchset));
-  renderWatch();
-}
-
-function renderWatch() {
-  $("watchTable").innerHTML = watchset.map(s =>
-    `<tr><td>⭐ <b>${esc(s)}</b></td><td class="rightprice">—</td><td class="rightscore">—</td></tr>`
-  ).join("");
-
-  if ($("fullwatch")) {
-    $("fullwatch").innerHTML = watchset.map(s =>
-      `<button class="watch" style="margin:5px" onclick="analyze('${esc(s)}');show('dashboard')">⭐ ${esc(s)}</button>`
-    ).join("");
-  }
-}
-
-async function loadNews() {
-  const q = encodeURIComponent($("nq")?.value || "Indian stock market");
-  try {
-    const d = await apiFetch("/api/news?q=" + q + "&limit=8");
-    const arr = d.items || [];
-    const html = arr.map(x =>
-      `<div class="newsitem">
-        <div class="thumb">📰</div>
-        <div><b>${esc(x.title || "")}</b>
-        <div class="meta">${esc(x.published || "")} • ${esc(x.source || "News")}</div></div>
-      </div>`
-    ).join("");
-
-    $("newsList").innerHTML = html || "<div class='meta'>No news available.</div>";
-    if ($("fullnews")) $("fullnews").innerHTML = html || "<div class='meta'>No news available.</div>";
-  } catch (_) {
-    $("newsList").innerHTML = "<div class='meta'>Market news temporarily unavailable.</div>";
-  }
-}
-
-async function compare() {
-  const symbols = $("cmp").value.split(",").map(x => x.trim()).filter(Boolean);
-  try {
-    const d = await apiFetch("/api/compare", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({symbols})
-    });
-    $("cmpout").innerHTML = `
-      <table class="resulttable">
-        <tr><th>Stock</th><th>Score</th><th>Decision</th><th>Price</th></tr>
-        ${(d.results || []).map(x =>
-          `<tr><td>${esc(x.symbol)}</td><td>${esc(x.score)}</td><td>${esc(x.decision)}</td><td>₹${fmt(x.ltp)}</td></tr>`
-        ).join("")}
-      </table>`;
-  } catch (e) {
-    if (e.loginRequired) openLogin(); else alert(e.message);
-  }
-}
-
-async function screen() {
-  const symbols = $("scr").value.split(",").map(x => x.trim()).filter(Boolean);
-  try {
-    const d = await apiFetch("/api/screener", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
-        symbols,
-        min_score:$("minscore").value ? Number($("minscore").value) : null
-      })
-    });
-    $("scrout").innerHTML = `
-      <table class="resulttable">
-        <tr><th>Stock</th><th>Score</th><th>Decision</th></tr>
-        ${(d.results || []).map(x =>
-          `<tr><td>${esc(x.symbol)}</td><td>${esc(x.score)}</td><td>${esc(x.decision)}</td></tr>`
-        ).join("")}
-      </table>`;
-  } catch (e) {
-    if (e.loginRequired) openLogin(); else alert(e.message);
-  }
-}
-
-async function portfolio() {
-  const holdings = $("port").value.split(",").map(x => {
-    const a = x.trim().split(":");
-    return {symbol:a[0], quantity:Number(a[1]), avg_price:Number(a[2])};
-  }).filter(x => x.symbol && x.quantity > 0 && Number.isFinite(x.avg_price));
-
-  try {
-    const d = await apiFetch("/api/portfolio", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({holdings})
-    });
-    $("portout").innerHTML = `
-      <p><b>Invested:</b> ₹${fmt(d.total_invested)}
-      &nbsp; <b>Value:</b> ₹${fmt(d.total_value)}
-      &nbsp; <b>P/L:</b> ₹${fmt(d.pnl)} (${pct(d.pnl_pct)})
-      &nbsp; <b>Portfolio Score:</b> ${fmt(d.portfolio_score)}/100</p>
-      <table class="resulttable"><tr><th>Stock</th><th>LTP</th><th>P/L</th><th>Score</th></tr>
-      ${(d.rows || []).map(x =>
-        `<tr><td>${esc(x.symbol)}</td><td>₹${fmt(x.ltp)}</td><td>₹${fmt(x.pnl)}</td><td>${esc(x.score)}</td></tr>`
-      ).join("")}</table>`;
-  } catch (e) {
-    if (e.loginRequired) openLogin(); else alert(e.message);
-  }
-}
-
-async function history() {
-  const s = $("hist").value || "TCS";
-  try {
-    const d = await apiFetch("/api/history?symbol=" + encodeURIComponent(s));
-    $("histout").innerHTML = `
-      <table class="resulttable">
-        <tr><th>Time</th><th>Score</th><th>Decision</th><th>LTP</th></tr>
-        ${(d.items || []).map(x =>
-          `<tr><td>${esc(new Date(x.time).toLocaleString())}</td><td>${esc(x.score)}</td><td>${esc(x.decision)}</td><td>₹${fmt(x.ltp)}</td></tr>`
-        ).join("")}
-      </table>`;
-  } catch (e) {
-    if (e.loginRequired) openLogin(); else alert(e.message);
-  }
-}
-
-async function alertCheck() {
-  const s = $("al").value || "TCS";
-  try {
-    const d = await apiFetch("/api/alerts/check", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
-        symbol:s,
-        min_score:$("almin").value ? Number($("almin").value) : null
-      })
-    });
-    $("alout").innerHTML =
-      `<p>${d.triggered ? "🔔 Alert triggered" : "✓ No alert"} — ${esc(d.symbol)}:
-       ${esc(d.score)}/100, ₹${fmt(d.ltp)}</p>`;
-  } catch (e) {
-    if (e.loginRequired) openLogin(); else alert(e.message);
-  }
-}
-
-async function loadAlerts() {
-  if (!sessionId || !$("alerts")) return;
-  try {
-    const d = await apiFetch("/api/alerts");
-    const list = d.items || [];
-    if ($("alout")) $("alout").innerHTML = list.length
-      ? list.map(x => `<div class="metric">${esc(x.symbol)} — min score ${esc(x.min_score ?? "—")}</div>`).join("")
-      : "<div class='meta'>No saved alerts.</div>";
-  } catch (_) {}
-}
-
-async function logout() {
-  try { await apiFetch("/api/logout", {method:"POST"}); } catch (_) {}
-  sessionId = "";
-  localStorage.removeItem("sm_session");
-}
-
-loadNews();
-renderWatch();
-</script>
-
-<div id="loginModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;align-items:center;justify-content:center">
-  <div style="width:360px;background:#fff;border-radius:12px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.25)">
-    <h3 style="margin:0 0 8px;font-size:18px">🔐 Kotak Neo Login</h3>
-    <p style="font-size:12px;color:#64748b;margin:0 0 15px">Enter the current 6-digit TOTP to enable live stock analysis.</p>
-    <input id="totp" maxlength="6" inputmode="numeric" autocomplete="one-time-code"
-           placeholder="Enter 6-digit TOTP"
-           style="width:100%;padding:11px;border:1px solid #dbe2ea;border-radius:7px;outline:none">
-    <div id="loginError" style="display:none;color:#dc2626;font-size:11px;margin-top:8px"></div>
-    <div style="display:flex;gap:8px;margin-top:15px">
-      <button onclick="closeLogin()" style="flex:1;padding:10px;border:1px solid #dbe2ea;border-radius:7px;background:#fff;cursor:pointer">Cancel</button>
-      <button id="loginBtn" onclick="doLogin()" style="flex:1;padding:10px;border:0;border-radius:7px;background:#09ad5c;color:#fff;font-weight:800;cursor:pointer">Login</button>
+    <!-- KOTAK NEO LOGIN MODAL -->
+    <div id="loginModal" class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-2xl p-8 max-w-sm w-full shadow-2xl relative border-t-4 border-brand-green">
+            <div class="flex justify-center mb-4">
+                <div class="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center">
+                    <i class="fa-solid fa-shield-halved text-brand-green text-3xl"></i>
+                </div>
+            </div>
+            <h2 class="text-2xl font-bold text-gray-900 mb-1 text-center">Connect Broker</h2>
+            <p class="text-sm text-gray-500 mb-6 text-center">Enter Kotak Neo 6-digit TOTP to authorize secure API access.</p>
+            
+            <input type="text" id="totpInput" maxlength="6" autocomplete="off" placeholder="000000" class="w-full border-2 border-gray-200 px-4 py-4 rounded-xl text-3xl tracking-[0.5em] text-center font-black outline-none focus:border-brand-green transition-colors mb-6 text-gray-800">
+            
+            <button id="loginBtn" class="w-full bg-brand-green hover:bg-green-600 text-white font-bold py-3.5 rounded-xl shadow-lg transition flex justify-center items-center gap-2">
+                <i class="fa-solid fa-lock"></i> Verify & Login
+            </button>
+        </div>
     </div>
-  </div>
-</div>
 
-</body></html>
+    <!-- FRONTEND JAVASCRIPT CONNECTION TO BACKEND -->
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Modal Elements
+            const modal = document.getElementById('loginModal');
+            const loginBtn = document.getElementById('loginBtn');
+            const logoutBtnSide = document.getElementById('logoutBtnSide');
+            const totpInput = document.getElementById('totpInput');
+            
+            // Search Elements
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const searchInput = document.getElementById('searchInput');
+
+            // UI Elements to Update
+            const uiPrice = document.getElementById('uiPrice');
+            const uiScore = document.getElementById('uiScore');
+            const uiScoreRing = document.getElementById('uiScoreRing');
+            const uiTitle = document.getElementById('uiTitle');
+            const uiSymbol = document.getElementById('uiSymbol');
+            const uiLogo = document.getElementById('uiLogo');
+            const uiDecisionBtn = document.getElementById('uiDecisionBtn');
+            
+            const uiFairValue = document.getElementById('uiFairValue');
+            const uiUpside = document.getElementById('uiUpside');
+            const uiBuyZone = document.getElementById('uiBuyZone');
+            const uiMargin = document.getElementById('uiMargin');
+            const uiConfidenceTxt = document.getElementById('uiConfidenceTxt');
+            const uiConfidenceBar = document.getElementById('uiConfidenceBar');
+            
+            const uiFundScore = document.getElementById('uiFundScore');
+            const uiTechScore = document.getElementById('uiTechScore');
+            const uiValScore = document.getElementById('uiValScore');
+            const uiRiskScore = document.getElementById('uiRiskScore');
+            const uiInsights = document.getElementById('uiInsights');
+
+            const API_URL = 'http://127.0.0.1:8000';
+
+            // Utility: Headers Maker
+            const getHeaders = () => ({
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('sm_token')}`
+            });
+
+            // 1. SESSION MANAGEMENT ----------------------------------
+            const checkSession = async () => {
+                const token = localStorage.getItem('sm_token');
+                if(!token) { 
+                    modal.classList.remove('hidden'); 
+                    logoutBtnSide.classList.add('hidden');
+                    return false; 
+                }
+                try {
+                    const res = await fetch(`${API_URL}/api/session`, { headers: getHeaders() });
+                    const data = await res.json();
+                    if(!data.logged_in) throw new Error();
+                    
+                    modal.classList.add('hidden');
+                    logoutBtnSide.classList.remove('hidden');
+                    return true;
+                } catch(e) {
+                    localStorage.removeItem('sm_token');
+                    modal.classList.remove('hidden');
+                    logoutBtnSide.classList.add('hidden');
+                    return false;
+                }
+            };
+            
+            // Initial check
+            await checkSession();
+
+            // 2. LOGIN LOGIC -----------------------------------------
+            loginBtn.addEventListener('click', async () => {
+                const totp = totpInput.value.trim();
+                if(totp.length !== 6) return alert("Please enter a 6-digit TOTP code.");
+                
+                const originalText = loginBtn.innerHTML;
+                loginBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Connecting...';
+                loginBtn.disabled = true;
+
+                try {
+                    const res = await fetch(`${API_URL}/api/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ totp })
+                    });
+                    const data = await res.json();
+                    
+                    if(res.ok && data.token) {
+                        localStorage.setItem('sm_token', data.token);
+                        modal.classList.add('hidden');
+                        logoutBtnSide.classList.remove('hidden');
+                        totpInput.value = '';
+                    } else {
+                        alert(`Login failed: ${data.detail}`);
+                    }
+                } catch(e) { 
+                    alert("Cannot reach the backend server. Is app.py running?"); 
+                }
+                
+                loginBtn.innerHTML = originalText;
+                loginBtn.disabled = false;
+            });
+
+            // LOGOUT
+            logoutBtnSide.addEventListener('click', async () => {
+                try {
+                    await fetch(`${API_URL}/api/logout`, { method: 'POST', headers: getHeaders() });
+                } catch(e) {}
+                localStorage.removeItem('sm_token');
+                window.location.reload();
+            });
+
+            // 3. ANALYZE BUTTON LOGIC --------------------------------
+            analyzeBtn.addEventListener('click', async () => {
+                if(!await checkSession()) return;
+                
+                const symbol = searchInput.value.trim().toUpperCase();
+                if(!symbol) return alert("Please enter a stock symbol.");
+
+                analyzeBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+                analyzeBtn.disabled = true;
+
+                try {
+                    const res = await fetch(`${API_URL}/api/score`, {
+                        method: 'POST',
+                        headers: getHeaders(),
+                        body: JSON.stringify({ company: symbol })
+                    });
+                    
+                    if(res.status === 401) {
+                        await checkSession(); // Will trigger modal
+                        throw new Error("Session expired");
+                    }
+
+                    const data = await res.json();
+                    
+                    if(res.ok) {
+                        // MAP REAL DATA TO UI
+                        uiTitle.innerText = data.symbol;
+                        uiSymbol.innerHTML = `NSE <span class="mx-2 text-gray-300">|</span> Live Data`;
+                        uiLogo.innerText = data.symbol.substring(0,2);
+                        
+                        // Price & Score
+                        uiPrice.innerText = `₹${data.ltp.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                        uiScore.innerText = data.score;
+                        
+                        // Score Ring Calculation (283 is full circle)
+                        const offset = 283 - (283 * (data.score / 100));
+                        uiScoreRing.style.strokeDashoffset = offset;
+                        
+                        // Decision Button Styling
+                        uiDecisionBtn.className = 'px-8 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 shadow-md text-white transition';
+                        if(data.decision === 'STRONG BUY' || data.decision === 'BUY') {
+                            uiDecisionBtn.classList.add('bg-brand-green');
+                            uiDecisionBtn.innerHTML = `<i class="fa-solid fa-arrow-trend-up"></i> ${data.decision}`;
+                        } else if(data.decision === 'HOLD') {
+                            uiDecisionBtn.classList.add('bg-yellow-500');
+                            uiDecisionBtn.innerHTML = `<i class="fa-solid fa-hand"></i> HOLD`;
+                        } else {
+                            uiDecisionBtn.classList.add('bg-red-500');
+                            uiDecisionBtn.innerHTML = `<i class="fa-solid fa-arrow-trend-down"></i> AVOID`;
+                        }
+                        
+                        // Valuation Metrics
+                        const fv = data.fair_value_analysis;
+                        uiFairValue.innerText = fv.fair_value ? `₹${fv.fair_value}` : 'N/A';
+                        uiUpside.innerText = fv.upside_potential_pct ? `${fv.upside_potential_pct}%` : 'N/A';
+                        uiBuyZone.innerText = fv.buy_zone || 'N/A';
+                        uiMargin.innerText = fv.margin_of_safety_pct ? `${fv.margin_of_safety_pct}%` : 'N/A';
+                        
+                        // Upside color logic
+                        uiUpside.className = 'text-sm font-bold ' + (fv.upside_potential_pct > 0 ? 'text-brand-green' : 'text-red-500');
+                        uiMargin.className = 'text-sm font-bold ' + (fv.margin_of_safety_pct > 0 ? 'text-brand-green' : 'text-red-500');
+
+                        // Confidence
+                        uiConfidenceTxt.innerText = `${data.data_confidence_pct}%`;
+                        uiConfidenceBar.style.width = `${data.data_confidence_pct}%`;
+
+                        // Breakdown Scores
+                        uiFundScore.innerText = data.breakdown.fundamental.score;
+                        uiTechScore.innerText = data.breakdown.technical.score;
+                        uiValScore.innerText = data.breakdown.valuation.score;
+                        uiRiskScore.innerText = data.breakdown.risk.score;
+
+                        // Insights (Positives & Warnings)
+                        uiInsights.innerHTML = '';
+                        data.why_buy.forEach(msg => {
+                            uiInsights.innerHTML += `<div class="flex items-start gap-2"><i class="fa-solid fa-check text-brand-green mt-0.5"></i><span class="text-gray-700">${msg}</span></div>`;
+                        });
+                        data.risk_warnings.forEach(msg => {
+                            uiInsights.innerHTML += `<div class="flex items-start gap-2"><i class="fa-solid fa-triangle-exclamation text-orange-500 mt-0.5"></i><span class="text-gray-700">${msg}</span></div>`;
+                        });
+                        if(data.why_buy.length === 0 && data.risk_warnings.length === 0) {
+                            uiInsights.innerHTML = `<p class="text-gray-500 text-xs italic">No specific insights generated.</p>`;
+                        }
+
+                    } else {
+                        alert(`Error: ${data.detail || 'Failed to fetch data'}`);
+                    }
+                } catch(e) {
+                    console.error(e);
+                }
+                
+                analyzeBtn.innerHTML = 'Analyze';
+                analyzeBtn.disabled = false;
+            });
+
+            // Trigger on Enter key
+            searchInput.addEventListener('keypress', (e) => {
+                if(e.key === 'Enter') analyzeBtn.click();
+            });
+        });
+    </script>
+</body>
+</html>
