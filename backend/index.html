@@ -164,7 +164,7 @@ function page(id,btn){
   const target=$(id);if(target)target.classList.add('active');
   document.querySelectorAll('.nav button,.toplinks button[data-page]').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll(`[data-page="${id}"]`).forEach(x=>x.classList.add('active'));
-  window.scrollTo({top:0,behavior:'smooth'});
+  // Intentionally do not change window scroll position.
   if(id==='news')loadNews('Indian stock market',true);
   if(id==='pulse')loadMarketPulse();
   if(id==='alerts')loadAlerts();
@@ -177,7 +177,7 @@ function openLogin(){if($('loginModal'))$('loginModal').style.display='flex'}
 function closeLogin(){if($('loginModal'))$('loginModal').style.display='none'}
 async function doLogin(){
   const totp=$('totp').value.trim();$('loginErr').textContent='Logging in…';
-  try{const d=await api('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({totp})});sessionId=d.session_id;localStorage.setItem('sm_session',sessionId);$('loginErr').style.color='#16a34a';$('loginErr').textContent='✓ Kotak Neo login successful';closeLogin();connectLiveStream(current);await analyze(current)}
+  try{const d=await api('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({totp})});sessionId=d.session_id;localStorage.setItem('sm_session',sessionId);$('loginErr').style.color='#16a34a';$('loginErr').textContent='✓ Kotak Neo login successful';closeLogin();await analyze(current)}
   catch(e){$('loginErr').style.color='#dc2626';$('loginErr').textContent=e.message}
 }
 function logout(){api('/api/logout',{method:'POST'}).catch(()=>{});sessionId='';localStorage.removeItem('sm_session');if(liveWs)liveWs.close();liveStatus('Public TradingView data · login for Kotak Neo live feed',false)}
@@ -227,11 +227,11 @@ async function analyze(symbol){
     $('score').innerHTML=`${d.score}<small>/100</small>`;$('decision').textContent=d.decision||'HOLD';
     const fv=d.fair_value_analysis||{};$('fair').textContent=fv.fair_value!=null?'₹'+fmt(fv.fair_value):'₹—';$('upside').textContent=fv.upside_pct!=null?pct(fv.upside_pct):'—';$('zone').textContent=fv.buy_zone||'—';$('mos').textContent=fv.margin_of_safety_pct!=null?pct(fv.margin_of_safety_pct):'—';$('conf').textContent=d.data_confidence_pct!=null?`${d.data_confidence_pct}%`:'—';$('confline').style.width=`${Math.min(100,Number(d.data_confidence_pct)||0)}%`;
     const b=d.breakdown||{};setScore('fscore',b.fundamental?.score,40,'fp');setScore('tscore',b.technical?.score,25,'tp');setScore('vscore',b.valuation?.score,20,'vp');setScore('rscore',b.risk?.score,15,'rp');renderBreak(b);
-    $('sumDecision').textContent=d.decision||'—';$('sumConf').textContent=d.data_confidence_pct!=null?`${d.data_confidence_pct}%`:'—';updateWatchButton();renderWatch();resetLiveChart();connectLiveStream(current);
+    $('sumDecision').textContent=d.decision||'—';$('sumConf').textContent=d.data_confidence_pct!=null?`${d.data_confidence_pct}%`:'—';updateWatchButton();renderWatch();connectLiveStream(current);
     liveStatus(`${d.live_ltp_source||'TradingView'} · ${d.market_data_source||'Market data'}`,true);
     try{await api('/api/history',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:current,score:d.score,decision:d.decision,ltp:d.ltp})})}catch{}
   }catch(e){
-    $('company').textContent=`${symbol} — data unavailable`;$('symbol').textContent=symbol;$('change').textContent='';liveStatus(e.message,false);resetLiveChart();startPricePolling();
+    $('company').textContent=`${symbol} — data unavailable`;$('symbol').textContent=symbol;$('change').textContent='';liveStatus(e.message,false);startPricePolling();
   }
 }
 
@@ -265,23 +265,58 @@ function loadNewsCategory(q,btn){newsQuery=q;document.querySelectorAll('.filters
 function tvSymbol(sym){return `NSE:${String(sym||'TCS').toUpperCase().replace(/[^A-Z0-9_]/g,'')}`}
 function renderTradingViewChart(sym= current, range=tvRange){
   const host=$('tvWidget'); if(!host)return;
+
+  // TradingView's embedded script can sometimes move browser focus/scroll
+  // while it is being recreated. Preserve the user's exact page position.
+  const savedX=window.scrollX;
+  const savedY=window.scrollY;
   const symbol=tvSymbol(sym);
-  const tvUrl=`https://www.tradingview.com/symbols/NSE-${encodeURIComponent(String(sym||'TCS').toUpperCase())}/`; const tvLink=$('tvOpenLink'); if(tvLink) tvLink.href=tvUrl; const tvLink2=$('tvOpenLink2'); if(tvLink2) tvLink2.href=tvUrl;
+  const tvUrl=`https://www.tradingview.com/symbols/NSE-${encodeURIComponent(String(sym||'TCS').toUpperCase())}/`;
+
+  const tvLink=$('tvOpenLink');
+  if(tvLink) tvLink.href=tvUrl;
+  const tvLink2=$('tvOpenLink2');
+  if(tvLink2) tvLink2.href=tvUrl;
+
   host.innerHTML='';
   const script=document.createElement('script');
   script.src='https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
-  script.type='text/javascript'; script.async=true;
+  script.type='text/javascript';
+  script.async=true;
   script.textContent=JSON.stringify({
-    autosize:true, symbol, interval:'D', timezone:'Asia/Kolkata', theme:'light', style:'1', locale:'en',
-    allow_symbol_change:true, hide_top_toolbar:false, hide_legend:false, save_image:false,
-    calendar:false, hide_volume:false, support_host:'https://www.tradingview.com', range
+    autosize:true,
+    symbol,
+    interval:'D',
+    timezone:'Asia/Kolkata',
+    theme:'light',
+    style:'1',
+    locale:'en',
+    allow_symbol_change:true,
+    hide_top_toolbar:false,
+    hide_legend:false,
+    save_image:false,
+    calendar:false,
+    hide_volume:false,
+    support_host:'https://www.tradingview.com',
+    range
   });
   host.appendChild(script);
+
+  // Restore position after TradingView has had a chance to initialize.
+  const restore=()=>{
+    window.scrollTo(savedX,savedY);
+  };
+  restore();
+  requestAnimationFrame(restore);
+  setTimeout(restore,50);
+  setTimeout(restore,200);
+  setTimeout(restore,700);
+  setTimeout(restore,1500);
 }
 function resetLiveChart(){renderTradingViewChart(current,tvRange)}
 // Keep page scrolling stable when the pointer is over the embedded chart.
 // Normal clicks/links inside TradingView remain available.
-function protectChartWheel(){const w=$('tvChart');if(!w||w.dataset.wheelProtected)return;w.dataset.wheelProtected='1';w.style.overscrollBehavior='contain';w.addEventListener('wheel',e=>{if(e.target===w){e.preventDefault();}}, {passive:false});}
+function protectChartWheel(){const w=$('tvChart');if(!w)return;w.style.overscrollBehavior='contain';w.style.touchAction='auto';}
 
 function setTVRange(range,btn){tvRange=range;document.querySelectorAll('.periods button').forEach(x=>x.classList.remove('active'));if(btn)btn.classList.add('active');renderTradingViewChart(current,tvRange)}
 function startPricePolling(){clearInterval(pricePollTimer);pollLivePrice();pricePollTimer=setInterval(pollLivePrice,10000)}
