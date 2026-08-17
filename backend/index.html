@@ -1,253 +1,153 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StockScore Live</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StockMeter — Unlimited Stock Intelligence</title>
 <style>
-*{box-sizing:border-box}
-body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#172033}
-.container{max-width:1100px;margin:0 auto;padding:24px}
-header{background:#101828;color:white;padding:22px 24px;border-radius:18px;margin-bottom:20px}
-header h1{margin:0 0 6px;font-size:30px}
-header p{margin:0;color:#cbd5e1}
-.card{background:white;border:1px solid #e5e7eb;border-radius:16px;padding:20px;margin-bottom:18px;box-shadow:0 4px 16px rgba(16,24,40,.06)}
-h2{margin:0 0 14px;font-size:20px}
-.row{display:flex;gap:12px;flex-wrap:wrap}
-input,button{height:44px;border-radius:10px;border:1px solid #d0d5dd;padding:0 14px;font-size:15px}
-input{flex:1;min-width:180px}
-button{background:#175cd3;color:white;border:none;font-weight:600;cursor:pointer}
-button:hover{opacity:.92}
-button.secondary{background:#344054}
-.status{margin-top:10px;font-size:14px}
-.success{color:#067647}.error{color:#b42318}.muted{color:#667085}
-.hidden{display:none}
-.summary{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:14px}
-.metric{background:#f8fafc;border-radius:14px;padding:16px}
-.metric .label{font-size:13px;color:#667085;margin-bottom:6px}
-.metric .value{font-size:26px;font-weight:700}
-.scorebox{text-align:center;padding:24px;border-radius:16px;background:#f8fafc}
-.score{font-size:54px;font-weight:800}
-.decision{display:inline-block;padding:8px 16px;border-radius:999px;font-weight:700;margin-top:8px}
-.buy{background:#dcfae6;color:#067647}
-.strong{background:#abefc6;color:#05603a}
-.hold{background:#fef0c7;color:#b54708}
-.avoid{background:#fee4e2;color:#b42318}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-.barrow{margin:12px 0}
-.barhead{display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px}
-.bar{height:10px;background:#eaecf0;border-radius:99px;overflow:hidden}
-.fill{height:100%;background:#175cd3;border-radius:99px}
-table{width:100%;border-collapse:collapse}
-td{padding:9px 4px;border-bottom:1px solid #eaecf0}
-td:first-child{color:#667085}
-.footer{font-size:12px;color:#667085;margin-top:18px}
-@media(max-width:750px){.summary,.grid{grid-template-columns:1fr 1fr}.summary .metric:first-child{grid-column:1/-1}}
+:root{--navy:#061426;--navy2:#0b1d34;--green:#0bbf6a;--blue:#2563eb;--purple:#7c3aed;--orange:#f59e0b;--red:#ef4444;--text:#111827;--muted:#64748b;--line:#e5e7eb;--bg:#f5f7fb;--card:#fff}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:var(--text);background:var(--bg)}
+button,input,select{font:inherit}.app{min-height:100vh;display:flex}.sidebar{width:255px;background:linear-gradient(180deg,#061426,#071b32);color:#fff;position:fixed;inset:0 auto 0 0;z-index:30;display:flex;flex-direction:column}.brand{height:72px;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;gap:10px;align-items:center}.brandmark{font-size:31px;font-weight:900;color:#08c66f}.brand h1{font-size:22px;margin:0}.brand small{display:block;font-size:11px;color:#fff}.nav{padding:18px 14px;display:grid;gap:4px}.nav button{background:transparent;border:0;color:#d8e2ee;text-align:left;padding:11px 12px;border-radius:7px;cursor:pointer;font-weight:650;font-size:13px}.nav button:hover,.nav button.active{background:#0d263e;color:#16d778}.nav button.active{border-left:3px solid #0bd276;padding-left:9px}.badge{float:right;font-size:10px;padding:3px 7px;border-radius:5px;background:#6d28d9;color:#fff}.badge.gold{background:#d59b00}.badge.new{background:#098b57}.upgrade{margin:auto 14px 14px;padding:18px;background:linear-gradient(145deg,#241151,#32146b);border-radius:9px}.upgrade h3{margin:0 0 8px;font-size:14px}.upgrade p{font-size:12px;color:#ddd;margin:0 0 13px;line-height:1.5}.upgrade button{width:100%;border:0;border-radius:6px;padding:10px;background:#7b20dd;color:#fff;font-weight:800}.copyright{font-size:10px;color:#9aa8b9;padding:0 18px 14px}.main{margin-left:255px;width:calc(100% - 255px)}.top{height:72px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 25px;gap:28px;position:sticky;top:0;z-index:20}.search{display:flex;width:min(520px,52vw);height:40px}.search input{flex:1;border:1px solid #dbe1e8;border-right:0;border-radius:6px 0 0 6px;padding:0 13px;outline:0}.search button{border:0;background:#0ab765;color:#fff;padding:0 21px;border-radius:0 6px 6px 0;font-weight:800;cursor:pointer}.toplinks{margin-left:auto;display:flex;gap:28px;align-items:center;font-size:13px;font-weight:750}.toplinks button{border:0;background:none;cursor:pointer;color:#111}.toplinks .active{color:#0ab765;border-bottom:2px solid #0ab765;padding-bottom:8px}.avatar{width:40px;height:40px;border-radius:50%;background:#f3f4f6;display:grid;place-items:center;font-weight:800}.ticker{height:42px;background:#fff;display:flex;align-items:center;justify-content:center;gap:28px;color:#2563eb;font-size:12px;font-weight:700;border-bottom:1px solid #eef1f5}.content{padding:14px;max-width:1320px;margin:auto}.gridtop{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:14px}.card{background:var(--card);border:1px solid #edf0f4;border-radius:9px;box-shadow:0 2px 7px rgba(15,23,42,.035)}.hero{padding:14px}.herohead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.company{display:flex;gap:13px;align-items:center}.logo{width:60px;height:60px;border-radius:50%;background:linear-gradient(145deg,#2b55db,#4520ba);color:#fff;display:grid;place-items:center;font-size:18px;font-weight:850}.company h2{margin:0;font-size:20px}.company p{margin:4px 0 0;font-size:12px;color:#475569}.watchbtn{border:1px solid #dbe2ea;background:#fff;padding:9px 13px;border-radius:6px;cursor:pointer;font-size:12px}.heroMetrics{display:grid;grid-template-columns:1.05fr .9fr 1fr;gap:10px;align-items:stretch}.pricebox{padding:10px 0}.label{font-size:11px;color:#334155}.price{font-size:30px;font-weight:850;margin:8px 0}.up{color:#08a957;font-size:12px;font-weight:800}.scorebox{border:1px solid #eef1f4;border-radius:7px;text-align:center;padding:10px}.scorebox h3{margin:0;font-size:12px}.score{font-size:55px;line-height:1;color:#08a957;font-weight:850;margin:7px 0}.score small{font-size:20px;color:#334155;font-weight:500}.decision{display:inline-block;background:#09ae5b;color:#fff;border-radius:20px;padding:7px 22px;font-size:14px;font-weight:850}.quality{font-size:12px;color:#475569;margin-top:8px}.fair{border:1px solid #eef1f4;border-radius:7px;padding:5px 13px}.fairrow{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #edf0f4;font-size:11px}.fairrow:last-child{border:0}.green{color:#08a957;font-weight:800}.bar{height:6px;background:#e9edf3;border-radius:10px;overflow:hidden}.bar i{display:block;height:100%;background:#0ab765;border-radius:10px}.category{margin-top:14px;display:grid;grid-template-columns:repeat(4,1fr);background:#fff;border:1px solid #edf0f4;border-radius:9px}.cat{padding:14px 15px;border-right:1px solid #edf0f4}.cat:last-child{border:0}.cathead{display:flex;gap:9px;align-items:center}.icon{width:38px;height:38px;border-radius:9px;background:#eef4ff;display:grid;place-items:center;font-size:20px}.cat:nth-child(2) .icon{background:#e9fbf2}.cat:nth-child(3) .icon{background:#f3eaff}.cat:nth-child(4) .icon{background:#fff5e5}.catname{font-size:11px;font-weight:800}.catnum{font-size:16px;font-weight:800}.cat .bar{margin-top:9px}.cat .bar i.blue{background:#2859df}.cat .bar i.purple{background:#7c3aed}.cat .bar i.orange{background:#f59e0b}.catnote{text-align:center;font-size:10px;color:#475569;margin-top:7px}.news{padding:13px}.sectiontitle{font-size:14px;font-weight:850;margin:0 0 10px}.filters{display:flex;gap:6px;margin-bottom:9px}.filters button{border:1px solid #dfe4ea;background:#fff;border-radius:6px;padding:6px 10px;font-size:10px;cursor:pointer}.filters button.active{background:#0ab765;color:#fff;border-color:#0ab765}.newsitem{display:flex;gap:9px;padding:9px 0;border-bottom:1px solid #edf0f4}.newsitem:last-child{border:0}.thumb{width:66px;height:45px;border-radius:5px;background:#e9eef7;display:grid;place-items:center;flex:none}.newsitem b{font-size:11px;line-height:1.3}.meta{font-size:9px;color:#64748b;margin-top:4px}.below{display:grid;grid-template-columns:1.25fr .75fr;gap:14px;margin-top:14px}.breakcard,.chartcard,.watchcard{padding:14px}.breakgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:0}.bd{padding:0 12px;border-right:1px solid #edf0f4}.bd:first-child{padding-left:0}.bd:last-child{border:0}.bd h4{font-size:11px;margin:0 0 11px}.bd h4.blue{color:#2458dc}.bd h4.green{color:#079b53}.bd h4.purple{color:#7136d9}.bd h4.orange{color:#d87900}.metric{display:flex;justify-content:space-between;gap:8px;font-size:10px;padding:6px 0}.metric span{text-transform:capitalize;color:#475569}.details{display:block;color:#174dd5;font-size:10px;margin-top:12px;text-decoration:none}.chart{height:220px;position:relative;overflow:hidden;background:linear-gradient(180deg,#fff,#fbfffd)}.chart svg{width:100%;height:100%}.periods{display:flex;gap:7px;justify-content:flex-end;margin-bottom:6px}.periods button{font-size:10px;padding:5px 9px;border:1px solid #dfe4ea;background:#fff;border-radius:5px}.periods button.active{background:#09ae5b;color:#fff;border-color:#09ae5b}.watchrow{display:grid;grid-template-columns:1fr 1fr 55px;gap:8px;font-size:11px;padding:9px 0;border-bottom:1px solid #edf0f4}.watchrow.head{font-size:10px;color:#64748b}.right{text-align:right}.featuregrid{margin-top:14px;display:grid;grid-template-columns:repeat(6,1fr);background:#fff;border:1px solid #edf0f4;border-radius:9px}.feature{padding:15px;text-align:center;border-right:1px solid #edf0f4}.feature:last-child{border:0}.feature .bigicon{font-size:27px}.feature h3{font-size:12px;margin:8px 0}.feature p{font-size:10px;color:#64748b;line-height:1.4;min-height:29px}.feature button{font-size:10px;background:#fff;border:1px solid #b9c9e9;border-radius:5px;padding:7px 10px;cursor:pointer}.disclaimer{font-size:9px;color:#334155;padding:8px}.page{display:none}.page.active{display:block}.toolcard{padding:18px}.toolinput{display:flex;gap:8px}.toolinput input{flex:1;border:1px solid #dbe2ea;border-radius:6px;padding:10px}.toolinput button{border:0;background:#2563eb;color:#fff;border-radius:6px;padding:0 17px;font-weight:800}.result{margin-top:14px}.table{width:100%;border-collapse:collapse;font-size:12px}.table th,.table td{padding:9px;border-bottom:1px solid #edf0f4;text-align:left}.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;align-items:center;justify-content:center}.modalbox{width:370px;background:#fff;border-radius:10px;padding:22px}.modalbox input{width:100%;padding:11px;border:1px solid #ccd5df;border-radius:6px}.modalbox button{padding:10px 14px;border:0;border-radius:6px;cursor:pointer}.loginmain{background:#2563eb;color:#fff}.mobile{display:none}
+@media(max-width:1050px){.sidebar{width:215px}.main{margin-left:215px;width:calc(100% - 215px)}.gridtop{grid-template-columns:1fr}.news{display:none}.featuregrid{grid-template-columns:repeat(3,1fr)}.toplinks{gap:10px}.heroMetrics{grid-template-columns:1fr 1fr}.fair{grid-column:1/-1}}
+@media(max-width:760px){.sidebar{display:none}.main{margin:0;width:100%}.mobile{display:block}.top{padding:0 10px}.toplinks{display:none}.search{width:100%}.ticker{overflow:auto;justify-content:flex-start;padding-left:10px}.content{padding:8px}.category{grid-template-columns:1fr 1fr}.below{grid-template-columns:1fr}.breakgrid{grid-template-columns:1fr 1fr}.featuregrid{grid-template-columns:1fr 1fr}.heroMetrics{grid-template-columns:1fr}.fair{grid-column:auto}.herohead{align-items:flex-start}.company h2{font-size:16px}}
 </style>
 </head>
 <body>
-<div class="container">
-<header>
-  <h1>📊 StockScore Live</h1>
-  <p>Kotak Neo live price + fundamental + technical + valuation/risk analysis</p>
+<div class="app">
+<aside class="sidebar">
+  <div class="brand"><div class="brandmark">SM</div><div><h1>StockMeter</h1><small>Unlimited Stock Intelligence</small></div></div>
+  <nav class="nav">
+    <button class="active" onclick="page('dashboard',this)">⌂ &nbsp; Dashboard</button>
+    <button onclick="page('analyze',this)">⌕ &nbsp; Analyze Stock</button>
+    <button onclick="page('compare',this)">♧ &nbsp; Peer Comparison <span class="badge">PRO</span></button>
+    <button onclick="page('screener',this)">⏳ &nbsp; Stock Screener <span class="badge">PRO</span></button>
+    <button onclick="page('portfolio',this)">▣ &nbsp; Portfolio Analyzer <span class="badge gold">PREMIUM</span></button>
+    <button onclick="page('history',this)">◷ &nbsp; Score History <span class="badge">PRO</span></button>
+    <button onclick="page('alerts',this)">♧ &nbsp; Alerts <span class="badge">PRO</span></button>
+    <button onclick="page('news',this)">▤ &nbsp; Market News <span class="badge new">NEW</span></button>
+    <button onclick="page('watchlist',this)">☆ &nbsp; Watchlist</button>
+    <button onclick="page('reports',this)">▤ &nbsp; My Reports</button>
+    <button onclick="page('how',this)">? &nbsp; How It Works</button>
+  </nav>
+  <div class="upgrade"><h3>🛠 Upgrade for More</h3><p>Get advanced analytics, portfolio tools, alerts & more.</p><button onclick="alert('All features are currently unlocked in this build.')">View Plans</button></div>
+  <div class="copyright">© 2026 StockMeter<br>All rights reserved.</div>
+</aside>
+
+<main class="main">
+<header class="top">
+  <button class="mobile" onclick="document.querySelector('.sidebar').style.display='flex'">☰</button>
+  <div class="search"><input id="globalSearch" placeholder="Search or enter stock (e.g. TCS, RELIANCE, INFY)" value="TCS"><button onclick="runAnalyze()">Analyze</button></div>
+  <div class="toplinks">
+    <button class="active" onclick="page('dashboard',this)">Dashboard</button><button onclick="page('screener',this)">Screener</button><button onclick="page('portfolio',this)">Portfolio</button><button onclick="page('news',this)">Market News</button><button onclick="page('alerts',this)">Alerts</button><span>🔔</span><span>◐</span><span class="avatar">U</span>
+  </div>
 </header>
+<div class="ticker"><span>∞ Unlimited Analyses</span><span>•</span><span>◉ No Limits</span><span>•</span><span>◉ Real-time Data</span><span>•</span><span>◉ 100-Point Stock Score</span><span>•</span><span>✓ All Features Unlocked</span></div>
 
-<div class="card">
-  <h2>🔐 Kotak Neo Login</h2>
-  <div class="row">
-    <input id="totp" type="password" maxlength="6" inputmode="numeric" placeholder="Enter 6-digit TOTP">
-    <button onclick="login()">Login to Kotak</button>
-  </div>
-  <div id="loginStatus" class="status muted">Not logged in</div>
-</div>
-
-<div class="card">
-  <h2>🔎 Analyze Stock</h2>
-  <div class="row">
-    <input id="company" placeholder="Enter NSE symbol e.g. TCS, INFY, RELIANCE">
-    <button onclick="analyze()">Analyze Stock</button>
-  </div>
-  <div id="scoreStatus" class="status muted"></div>
-</div>
-
-<div id="result" class="hidden">
-  <div class="summary">
-    <div class="metric">
-      <div class="label">Company</div>
-      <div class="value" id="companyName">-</div>
-      <div class="muted" id="symbol">-</div>
+<section id="dashboard" class="page active content">
+  <div class="gridtop">
+    <div>
+      <div class="card hero">
+        <div class="herohead"><div class="company"><div class="logo" id="logo">TCS</div><div><h2 id="company">Tata Consultancy Services Ltd.</h2><p>NSE: <b id="symbol">TCS</b> &nbsp; | &nbsp; IT Services</p></div></div><button class="watchbtn" onclick="toggleWatch()">☆ Add to Watchlist</button></div>
+        <div class="heroMetrics">
+          <div class="pricebox"><span class="label">Current Price</span><div class="price" id="price">₹—</div><div class="up" id="change">▲ Live price from Kotak Neo</div><div class="meta">Live market quote</div></div>
+          <div class="scorebox"><h3>STOCKMETER SCORE ⓘ</h3><div class="score" id="score">—<small>/100</small></div><span class="decision" id="decision">ANALYZE</span><div class="quality">Quality & signal score</div></div>
+          <div class="fair"><div class="fairrow"><span>Fair Value</span><b id="fair">₹—</b></div><div class="fairrow"><span>Upside Potential</span><b class="green" id="upside">—</b></div><div class="fairrow"><span>Buy Zone</span><b id="zone">—</b></div><div class="fairrow"><span>Margin of Safety</span><b id="mos">—</b></div><div class="fairrow"><span>Data Confidence</span><div style="width:100px"><b id="conf">—</b><div class="bar"><i id="confline" style="width:0"></i></div></div></div></div>
+        </div>
+      </div>
+      <div class="category">
+        <div class="cat"><div class="cathead"><div class="icon">🏛</div><div><div class="catname">Fundamental</div><div class="catnum" id="fscore">—/40</div></div></div><div class="bar"><i id="fp" class="blue"></i></div><div class="catnote">Strong</div></div>
+        <div class="cat"><div class="cathead"><div class="icon">📈</div><div><div class="catname">Technical</div><div class="catnum" id="tscore">—/25</div></div></div><div class="bar"><i id="tp"></i></div><div class="catnote">Good</div></div>
+        <div class="cat"><div class="cathead"><div class="icon">💲</div><div><div class="catname">Valuation</div><div class="catnum" id="vscore">—/20</div></div></div><div class="bar"><i id="vp" class="purple"></i></div><div class="catnote">Good</div></div>
+        <div class="cat"><div class="cathead"><div class="icon">🛡</div><div><div class="catname">Risk</div><div class="catnum" id="rscore">—/15</div></div></div><div class="bar"><i id="rp" class="orange"></i></div><div class="catnote">Moderate</div></div>
+      </div>
     </div>
-    <div class="metric">
-      <div class="label">Live LTP</div>
-      <div class="value" id="ltp">-</div>
-    </div>
-    <div class="metric">
-      <div class="label">StockScore</div>
-      <div class="value" id="score">-</div>
-    </div>
-    <div class="metric">
-      <div class="label">Decision</div>
-      <div id="decision" class="decision">-</div>
-    </div>
+    <div class="card news"><div class="sectiontitle">Market News <a style="float:right;color:#1554d6;font-size:10px;cursor:pointer" onclick="page('news')">View All</a></div><div class="filters"><button class="active" onclick="loadNews('Indian stock market')">All</button><button onclick="loadNews('India market')">India Market</button><button onclick="loadNews('NIFTY')">NIFTY</button><button onclick="loadNews('stocks India')">Stocks</button><button onclick="loadNews('RBI')">RBI</button><button onclick="loadNews('SEBI')">SEBI</button></div><div id="newsMini"><div class="meta">Loading market news...</div></div></div>
   </div>
 
-  <div class="grid" style="margin-top:18px">
-    <div class="card">
-      <h2>Fundamental — <span id="fundScore">0/40</span></h2>
-      <div id="fundBars"></div>
-    </div>
-    <div class="card">
-      <h2>Technical — <span id="techScore">0/30</span></h2>
-      <table id="techTable"></table>
-    </div>
+  <div class="below">
+    <div class="card breakcard"><div class="sectiontitle">Detailed Score Breakdown ⓘ</div><div class="breakgrid" id="breakdown"><div class="meta">Analyze a stock to load score details.</div></div></div>
+    <div class="card chartcard"><div class="sectiontitle">Price Chart</div><div class="periods"><button>1M</button><button>3M</button><button>6M</button><button class="active">1Y</button><button>3Y</button><button>5Y</button></div><div class="chart"><svg viewBox="0 0 600 240" preserveAspectRatio="none"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#0ab765" stop-opacity=".22"/><stop offset="1" stop-color="#0ab765" stop-opacity="0"/></linearGradient></defs><path d="M0 205 L20 197 L40 201 L60 188 L80 192 L100 174 L120 181 L140 164 L160 169 L180 148 L200 154 L220 139 L240 143 L260 127 L280 136 L300 112 L320 119 L340 102 L360 108 L380 90 L400 101 L420 82 L440 94 L460 72 L480 82 L500 59 L520 69 L540 48 L560 58 L580 37 L600 43 L600 240 L0 240Z" fill="url(#g)"/><polyline points="0,205 20,197 40,201 60,188 80,192 100,174 120,181 140,164 160,169 180,148 200,154 220,139 240,143 260,127 280,136 300,112 320,119 340,102 360,108 380,90 400,101 420,82 440,94 460,72 480,82 500,59 520,69 540,48 560,58 580,37 600,43" fill="none" stroke="#0ab765" stroke-width="3"/></svg></div><div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b"><span>1M</span><span>3M</span><span>6M</span><span>1Y</span><span>52W High</span><span>52W Low</span></div></div>
   </div>
 
-  <div class="card">
-    <h2>Valuation & Risk — <span id="valScore">0/30</span></h2>
-    <table id="valTable"></table>
+  <div class="below" style="grid-template-columns:1fr 1fr;margin-top:14px">
+    <div class="card watchcard"><div class="sectiontitle">My Watchlist <a style="float:right;color:#1554d6;font-size:10px;cursor:pointer" onclick="page('watchlist')">View All</a></div><div class="watchrow head"><span>Stock</span><span>Price</span><span class="right">Score</span></div><div id="watchMini"></div></div>
+    <div class="card watchcard"><div class="sectiontitle">Analysis Summary</div><div class="metric"><span>Decision</span><b id="sumDecision">—</b></div><div class="metric"><span>Live Data</span><b>Kotak Neo + TradingView</b></div><div class="metric"><span>News</span><b>Google News RSS</b></div><div class="metric"><span>Data Confidence</span><b id="sumConf">—</b></div></div>
   </div>
 
-  <div class="footer" id="note"></div>
-</div>
-</div>
+  <div class="featuregrid">
+    <div class="feature"><div class="bigicon">👥</div><h3>Peer Comparison</h3><p>Compare with industry peers side by side.</p><button onclick="page('compare')">Compare Now</button></div>
+    <div class="feature"><div class="bigicon">🔽</div><h3>Stock Screener</h3><p>Find best stocks using advanced filters.</p><button onclick="page('screener')">Open Screener</button></div>
+    <div class="feature"><div class="bigicon">💼</div><h3>Portfolio Analyzer</h3><p>Track performance, P/L, allocation & risk.</p><button onclick="page('portfolio')">Analyze Portfolio</button></div>
+    <div class="feature"><div class="bigicon">📈</div><h3>Score History</h3><p>See historical score movement over time.</p><button onclick="page('history')">View History</button></div>
+    <div class="feature"><div class="bigicon">🔔</div><h3>Alerts</h3><p>Get notified on score & price movements.</p><button onclick="page('alerts')">Manage Alerts</button></div>
+    <div class="feature"><div class="bigicon">▤</div><h3>Daily Market Report</h3><p>Get daily top picks, trends & insights.</p><button onclick="page('news')">View Report</button></div>
+  </div>
+  <div class="disclaimer">Disclaimer: StockMeter is an analytical tool and not a financial advisor. All data is for informational purposes only. Please do your own research before investing.</div>
+</section>
+
+<section id="analyze" class="page content"><div class="card toolcard"><h2>Analyze Stock</h2><div class="toolinput"><input id="anInput" value="TCS" placeholder="TCS, RELIANCE, INFY"><button onclick="analyzeFrom('anInput')">Analyze</button></div></div></section>
+<section id="compare" class="page content"><div class="card toolcard"><h2>Peer Comparison <span class="badge">PRO</span></h2><p class="meta">Enter comma-separated NSE symbols.</p><div class="toolinput"><input id="cmpInput" value="TCS,INFY,HDFCBANK,RELIANCE"><button onclick="compareStocks()">Compare</button></div><div id="cmpResult" class="result"></div></div></section>
+<section id="screener" class="page content"><div class="card toolcard"><h2>Stock Screener <span class="badge">PRO</span></h2><p class="meta">Enter symbols. Minimum score is optional.</p><div class="toolinput"><input id="scrInput" value="TCS,INFY,RELIANCE,HDFCBANK,ICICIBANK,LT"><input id="minScore" style="max-width:130px" placeholder="Min score"><button onclick="screenStocks()">Screen</button></div><div id="scrResult" class="result"></div></div></section>
+<section id="portfolio" class="page content"><div class="card toolcard"><h2>Portfolio Analyzer <span class="badge gold">PREMIUM</span></h2><p class="meta">Format: TCS:10:3000,INFY:20:1400</p><div class="toolinput"><input id="portInput" value="TCS:10:3000,INFY:20:1400"><button onclick="analyzePortfolio()">Analyze</button></div><div id="portResult" class="result"></div></div></section>
+<section id="history" class="page content"><div class="card toolcard"><h2>Score History <span class="badge">PRO</span></h2><div class="toolinput"><input id="histInput" value="TCS"><button onclick="loadHistory()">Load</button></div><div id="histResult" class="result"></div></div></section>
+<section id="alerts" class="page content"><div class="card toolcard"><h2>Alerts <span class="badge">PRO</span></h2><p class="meta">Check a stock against a score threshold.</p><div class="toolinput"><input id="alertInput" value="TCS"><input id="alertScore" placeholder="Min score" style="max-width:150px"><button onclick="checkAlert()">Check</button></div><div id="alertResult" class="result"></div></div></section>
+<section id="news" class="page content"><div class="card toolcard"><h2>Market News <span class="badge new">NEW</span></h2><div class="toolinput"><input id="newsInput" value="Indian stock market"><button onclick="loadNews(document.getElementById('newsInput').value,true)">Refresh</button></div><div id="newsFull" class="result"></div></div></section>
+<section id="watchlist" class="page content"><div class="card toolcard"><h2>My Watchlist</h2><p class="meta">Saved locally in this browser.</p><div id="watchFull"></div></div></section>
+<section id="reports" class="page content"><div class="card toolcard"><h2>My Reports</h2><p>Use Score History and Market News to build your analysis report.</p></div></section>
+<section id="how" class="page content"><div class="card toolcard"><h2>How It Works</h2><ol><li>Kotak Neo supplies live market price after login.</li><li>TradingView supplies financial/technical inputs.</li><li>StockMeter combines Fundamental, Technical, Valuation and Risk scores into a 100-point score.</li><li>The result is informational and not investment advice.</li></ol></div></section>
+</main></div>
+
+<div id="loginModal" class="modal"><div class="modalbox"><h3>🔐 Kotak Neo Login</h3><p class="meta">Enter your current 6-digit TOTP. Your broker credentials remain on the server environment.</p><input id="totp" maxlength="6" inputmode="numeric" placeholder="6-digit TOTP"><div id="loginErr" style="color:#dc2626;font-size:11px;margin-top:7px"></div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:15px"><button onclick="closeLogin()">Cancel</button><button class="loginmain" onclick="doLogin()">Login</button></div></div></div>
 
 <script>
-async function api(url, options){
-  const r = await fetch(url, options);
-  let data = {};
-  try { data = await r.json(); } catch(e) {}
-  if(!r.ok){
-    throw new Error(data.detail || data.message || ("HTTP " + r.status));
-  }
-  return data;
+let sessionId=localStorage.getItem("sm_session")||"", pending="", current="TCS";
+let watchlist=JSON.parse(localStorage.getItem("sm_watchlist")||'["TCS","RELIANCE","INFY","HDFCBANK","LT"]');
+
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+const fmt=v=>v==null||v===""||Number.isNaN(Number(v))?"—":Number(v).toLocaleString("en-IN",{maximumFractionDigits:2});
+const pct=v=>v==null||Number.isNaN(Number(v))?"—":Number(v).toFixed(2)+"%";
+
+function page(id,btn){document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));$(id)?.classList.add("active");if(btn){document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));btn.classList.add("active")}if(id==="news")loadNews();if(id==="watchlist")renderWatch();if(id==="history")loadHistory()}
+
+function openLogin(){ $("loginModal").style.display="flex";$("totp").value="";$("loginErr").textContent="";setTimeout(()=>$("totp").focus(),50)}
+function closeLogin(){ $("loginModal").style.display="none" }
+
+async function doLogin(){
+ const totp=$("totp").value.trim(); if(!/^\d{6}$/.test(totp)){ $("loginErr").textContent="Enter exactly 6 digits.";return}
+ try{const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({totp})});const d=await r.json();if(!r.ok)throw Error(d.detail||"Login failed");sessionId=d.session_id;localStorage.setItem("sm_session",sessionId);closeLogin();if(pending){let s=pending;pending="";analyze(s)}}catch(e){$("loginErr").textContent=e.message}}
+async function api(url,opt={}){let h=new Headers(opt.headers||{});if(sessionId)h.set("X-StockMeter-Session",sessionId);let r=await fetch(url,{...opt,headers:h});let d=await r.json().catch(()=>({}));if(r.status===401){sessionId="";localStorage.removeItem("sm_session");throw Object.assign(Error("LOGIN_REQUIRED"),{login:true})}if(!r.ok)throw Error(d.detail||"Request failed");return d}
+
+function runAnalyze(){analyze($("globalSearch").value)}
+function analyzeFrom(id){analyze($(id).value);page("dashboard")}
+async function analyze(symbol){
+ symbol=(symbol||"").trim().toUpperCase();if(!symbol)return;current=symbol;
+ try{let d=await api("/api/score",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({company:symbol})});render(d);page("dashboard")}
+ catch(e){if(e.login){pending=symbol;openLogin()}else alert("Analysis error: "+e.message)}}
+
+function render(d){
+ const sym=d.symbol||current,b=d.breakdown||{},f=d.fair_value_analysis||{};
+ $("logo").textContent=sym.slice(0,3);$("company").textContent=d.company||sym;$("symbol").textContent=sym;$("price").textContent="₹"+fmt(d.ltp);$("score").innerHTML=fmt(d.score)+'<small>/100</small>';$("decision").textContent=d.decision||"—";$("fair").textContent=f.fair_value!=null?"₹"+fmt(f.fair_value):"—";$("upside").textContent=pct(f.upside_pct);$("zone").textContent=f.buy_zone||"—";$("mos").textContent=pct(f.margin_of_safety_pct);$("conf").textContent=(d.data_confidence_pct??"—")+"%";$("confline").style.width=Math.min(100,Number(d.data_confidence_pct||0))+"%";$("sumDecision").textContent=d.decision||"—";$("sumConf").textContent=(d.data_confidence_pct??"—")+"%";
+ [["fscore","fp","fundamental",40],["tscore","tp","technical",25],["vscore","vp","valuation",20],["rscore","rp","risk",15]].forEach(x=>{let q=b[x[2]]||{};$(x[0]).textContent=(q.score??"—")+"/"+x[3];$(x[1]).style.width=((q.score||0)/x[3]*100)+"%"});
+ renderBreak(b);renderWatch();
+}
+function renderBreak(b){
+ $("breakdown").innerHTML=["fundamental","technical","valuation","risk"].map(k=>{let q=b[k]||{},rows=Object.entries(q.data||{}).slice(0,6).map(([a,v])=>`<div class="metric"><span>${esc(a.replaceAll("_"," "))}</span><b>${esc(fmt(v))}</b></div>`).join("");let c={fundamental:"blue",technical:"green",valuation:"purple",risk:"orange"}[k];return `<div class="bd"><h4 class="${c}">${k.toUpperCase()} (${q.score??0}/${q.max??0})</h4>${rows||'<div class="meta">No detailed data</div>'}${(q.positives||[]).slice(0,2).map(x=>`<div style="font-size:9px;color:#079b53;margin-top:4px">✓ ${esc(x)}</div>`).join("")}${(q.warnings||[]).slice(0,2).map(x=>`<div style="font-size:9px;color:#d97706;margin-top:4px">⚠ ${esc(x)}</div>`).join("")}<a class="details">View Details →</a></div>`}).join("")
 }
 
-function setStatus(id,msg,ok=false){
-  const el=document.getElementById(id);
-  el.textContent=msg;
-  el.className="status "+(ok?"success":"error");
-}
+function toggleWatch(){if(!watchlist.includes(current))watchlist.push(current);else watchlist=watchlist.filter(x=>x!==current);localStorage.setItem("sm_watchlist",JSON.stringify(watchlist));renderWatch()}
+function renderWatch(){ $("watchMini").innerHTML=watchlist.map(s=>`<div class="watchrow"><span>★ ${esc(s)}</span><span>—</span><b class="right">—</b></div>`).join("");$("watchFull").innerHTML=watchlist.map(s=>`<button style="margin:5px;padding:8px;border:1px solid #dbe2ea;background:#fff;border-radius:6px;cursor:pointer" onclick="analyze('${esc(s)}')">★ ${esc(s)}</button>`).join("")}
 
-async function login(){
-  const totp=document.getElementById("totp").value.trim();
-  if(!/^\d{6}$/.test(totp)){
-    setStatus("loginStatus","Enter exactly 6 digits.");
-    return;
-  }
-  try{
-    const data=await api("/api/login",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({totp})
-    });
-    setStatus("loginStatus","✅ "+data.message,true);
-    document.getElementById("totp").value="";
-  }catch(e){
-    setStatus("loginStatus","❌ "+e.message);
-  }
-}
+async function loadNews(q="Indian stock market",full=false){
+ try{let d=await api("/api/news?q="+encodeURIComponent(q)+"&limit=8");let h=(d.items||[]).map(x=>`<div class="newsitem"><div class="thumb">📰</div><div><b>${esc(x.title)}</b><div class="meta">${esc(x.published)} • ${esc(x.source)}</div></div></div>`).join("")||'<div class="meta">No news available.</div>';if(full||$("newsFull"))$("newsFull").innerHTML=h;if($("newsMini"))$("newsMini").innerHTML=h}catch(e){$("newsMini").innerHTML='<div class="meta">Market news temporarily unavailable.</div>'}}
 
-function decisionClass(d){
-  if(d==="STRONG BUY") return "decision strong";
-  if(d==="BUY") return "decision buy";
-  if(d==="HOLD") return "decision hold";
-  return "decision avoid";
-}
+function table(rows,headers){return `<table class="table"><tr>${headers.map(x=>`<th>${x}</th>`).join("")}</tr>${rows.join("")}</table>`}
+async function compareStocks(){try{let syms=$("cmpInput").value.split(",").map(x=>x.trim()).filter(Boolean);let d=await api("/api/compare",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({symbols:syms})});$("cmpResult").innerHTML=table((d.results||[]).map(x=>`<tr><td>${esc(x.symbol)}</td><td>${fmt(x.ltp)}</td><td>${x.score}/100</td><td>${esc(x.decision)}</td></tr>`),["Stock","Price","Score","Decision"])}catch(e){if(e.login)openLogin();else alert(e.message)}}
+async function screenStocks(){try{let syms=$("scrInput").value.split(",").map(x=>x.trim()).filter(Boolean);let ms=$("minScore").value.trim();let body={symbols:syms};if(ms)body.min_score=Number(ms);let d=await api("/api/screener",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});$("scrResult").innerHTML=table((d.results||[]).map(x=>`<tr><td>${esc(x.symbol)}</td><td>₹${fmt(x.ltp)}</td><td>${x.score}</td><td>${esc(x.decision)}</td></tr>`),["Stock","Price","Score","Decision"])}catch(e){if(e.login)openLogin();else alert(e.message)}}
+async function analyzePortfolio(){try{let hs=$("portInput").value.split(",").map(x=>{let a=x.trim().split(":");return{symbol:a[0],quantity:Number(a[1]),avg_price:Number(a[2])}}).filter(x=>x.symbol&&x.quantity>0);let d=await api("/api/portfolio",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({holdings:hs})});$("portResult").innerHTML=`<p><b>Invested:</b> ₹${fmt(d.total_invested)} &nbsp; <b>Value:</b> ₹${fmt(d.total_value)} &nbsp; <b>P/L:</b> ₹${fmt(d.pnl)} (${pct(d.pnl_pct)}) &nbsp; <b>Score:</b> ${fmt(d.portfolio_score)}</p>`+table((d.rows||[]).map(x=>`<tr><td>${esc(x.symbol)}</td><td>${x.quantity}</td><td>₹${fmt(x.ltp)}</td><td>₹${fmt(x.pnl)}</td><td>${x.score}</td></tr>`),["Stock","Qty","LTP","P/L","Score"])}catch(e){if(e.login)openLogin();else alert(e.message)}}
+async function loadHistory(){try{let s=$("histInput")?.value||"TCS";let d=await api("/api/history?symbol="+encodeURIComponent(s));$("histResult").innerHTML=table((d.items||[]).map(x=>`<tr><td>${esc(new Date(x.time).toLocaleString())}</td><td>${esc(x.symbol)}</td><td>${x.score}</td><td>${esc(x.decision)}</td><td>₹${fmt(x.ltp)}</td></tr>`),["Time","Stock","Score","Decision","LTP"])}catch(e){if(e.login)openLogin();else alert(e.message)}}
+async function checkAlert(){try{let body={symbol:$("alertInput").value};if($("alertScore").value)body.min_score=Number($("alertScore").value);let d=await api("/api/alerts/check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});$("alertResult").innerHTML=`<div class="card" style="padding:15px"><b>${d.triggered?"🔔 Alert Triggered":"✓ No Alert"}</b><br>${esc(d.symbol)} — Score ${d.score}/100 — ₹${fmt(d.ltp)}<br><small>${esc((d.reasons||[]).join(", "))}</small></div>`}catch(e){if(e.login)openLogin();else alert(e.message)}}
 
-function money(v){
-  return "₹"+Number(v).toLocaleString("en-IN",{maximumFractionDigits:2});
-}
-function pct(v){
-  return v==null ? "N/A" : Number(v).toFixed(2)+"%";
-}
-function val(v){
-  return v==null ? "N/A" : Number(v).toLocaleString("en-IN",{maximumFractionDigits:2});
-}
-
-function renderBars(f){
-  const items=[
-    ["PE",f.pe==null?null:f.pe, "×"],
-    ["ROE",f.roe_pct,"%"],
-    ["Operating Margin",f.operating_margin_pct,"%"],
-    ["Revenue Growth",f.revenue_growth_pct,"%"],
-    ["Earnings Growth",f.earnings_growth_pct,"%"],
-    ["Debt/Equity",f.debt_to_equity,""]
-  ];
-  const html=items.map(([name,v,suffix])=>{
-    let width=0;
-    if(v!=null){
-      if(name==="PE") width=Math.max(0,Math.min(100,(40-v)/40*100));
-      else if(name==="Debt/Equity") width=Math.max(0,Math.min(100,(200-v)/200*100));
-      else width=Math.max(0,Math.min(100,(v/40)*100));
-    }
-    return `<div class="barrow">
-      <div class="barhead"><span>${name}</span><strong>${v==null?"N/A":Number(v).toFixed(2)+suffix}</strong></div>
-      <div class="bar"><div class="fill" style="width:${width}%"></div></div>
-    </div>`;
-  }).join("");
-  document.getElementById("fundBars").innerHTML=html;
-}
-
-function renderTable(id, rows){
-  document.getElementById(id).innerHTML=rows.map(r=>`<tr><td>${r[0]}</td><td><strong>${r[1]}</strong></td></tr>`).join("");
-}
-
-async function analyze(){
-  const company=document.getElementById("company").value.trim();
-  if(!company){ setStatus("scoreStatus","Enter a stock symbol."); return; }
-  setStatus("scoreStatus","Fetching live data...",true);
-  try{
-    const d=await api("/api/score",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({company})
-    });
-
-    document.getElementById("result").classList.remove("hidden");
-    document.getElementById("companyName").textContent=d.company || company.toUpperCase();
-    document.getElementById("symbol").textContent=d.symbol || "";
-    document.getElementById("ltp").textContent=money(d.ltp);
-    document.getElementById("score").textContent=d.score+"/100";
-
-    const dec=document.getElementById("decision");
-    dec.textContent=d.decision;
-    dec.className=decisionClass(d.decision);
-
-    document.getElementById("fundScore").textContent=d.fundamental.score+"/40";
-    document.getElementById("techScore").textContent=d.technical.score+"/30";
-    document.getElementById("valScore").textContent=d.valuation_risk.score+"/30";
-
-    renderBars(d.fundamental);
-
-    renderTable("techTable",[
-      ["RSI",val(d.technical.rsi)],
-      ["SMA 50",money(d.technical.sma50)],
-      ["SMA 200",money(d.technical.sma200)],
-      ["20D Momentum",pct(d.technical.momentum_20d_pct)],
-      ["Trend",d.technical.trend]
-    ]);
-
-    renderTable("valTable",[
-      ["PEG Ratio",val(d.valuation_risk.peg_ratio)],
-      ["Price / Book",val(d.valuation_risk.price_to_book)],
-      ["Free Cash Flow",val(d.valuation_risk.free_cashflow)],
-      ["Profit Margin",pct(d.valuation_risk.profit_margin_pct)],
-      ["Current Ratio",val(d.valuation_risk.current_ratio)]
-    ]);
-
-    document.getElementById("note").textContent=d.data_note+" "+d.disclaimer;
-    setStatus("scoreStatus","✅ Analysis complete",true);
-  }catch(e){
-    setStatus("scoreStatus","❌ "+e.message);
-  }
-}
-
-document.getElementById("company").addEventListener("keydown",e=>{
-  if(e.key==="Enter") analyze();
-});
-document.getElementById("totp").addEventListener("keydown",e=>{
-  if(e.key==="Enter") login();
-});
+renderWatch();loadNews();analyze("TCS");
 </script>
-</body>
-</html>
+</body></html>
