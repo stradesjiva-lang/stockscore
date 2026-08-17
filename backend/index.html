@@ -39,7 +39,7 @@ button,input,select{font:inherit}.app{min-height:100vh;display:flex}.sidebar{wid
   <button class="mobile" onclick="document.querySelector('.sidebar').style.display='flex'">☰</button>
   <div class="search"><input id="globalSearch" placeholder="Search or enter stock (e.g. TCS, RELIANCE, INFY)" value="TCS"><button onclick="runAnalyze()">Analyze</button></div>
   <div class="toplinks">
-    <button data-page="dashboard" onclick="page('dashboard',this)">Dashboard</button><button data-page="screener" onclick="page('screener',this)">Screener</button><button data-page="portfolio" onclick="page('portfolio',this)">Portfolio</button><button data-page="news" onclick="page('news',this)">Market News</button><button data-page="alerts" onclick="page('alerts',this)">Alerts</button><span>🔔</span><span>◐</span><span class="avatar">U</span>
+    <button data-page="dashboard" onclick="page('dashboard',this)">Dashboard</button><button data-page="screener" onclick="page('screener',this)">Screener</button><button data-page="portfolio" onclick="page('portfolio',this)">Portfolio</button><button data-page="news" onclick="page('news',this)">Market News</button><button data-page="alerts" onclick="page('alerts',this)">Alerts</button><button onclick="openLogin()" style="border:1px solid #dbe2ea;background:#fff;border-radius:7px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer">Kotak Login</button><span>🔔</span><span>◐</span><span class="avatar" onclick="openLogin()" style="cursor:pointer">U</span>
   </div>
 </header>
 <div class="ticker"><span>∞ Unlimited Analyses</span><span>•</span><span>◉ No Limits</span><span>•</span><span>◉ Real-time Data</span><span>•</span><span>◉ 100-Point Stock Score</span><span>•</span><span>✓ All Features Unlocked</span></div><div id="marketTape" style="height:38px;background:#071a2f;color:#dce8f5;display:flex;align-items:center;justify-content:center;gap:28px;font-size:11px;overflow:auto"><span>Market data loading…</span></div>
@@ -114,111 +114,123 @@ button,input,select{font:inherit}.app{min-height:100vh;display:flex}.sidebar{wid
 <div id="loginModal" class="modal"><div class="modalbox"><h3>🔐 Kotak Neo Login</h3><p class="meta">Enter your current 6-digit TOTP. Your broker credentials remain on the server environment.</p><input id="totp" maxlength="6" inputmode="numeric" placeholder="6-digit TOTP"><div id="loginErr" style="color:#dc2626;font-size:11px;margin-top:7px"></div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:15px"><button onclick="closeLogin()">Cancel</button><button class="loginmain" onclick="doLogin()">Login</button></div></div></div>
 
 <script>
-let sessionId=localStorage.getItem("sm_session")||"", pending="", current="TCS", liveWs=null, fallbackTimer=null;
-let watchlist=JSON.parse(localStorage.getItem("sm_watchlist")||'["TCS","RELIANCE","INFY","HDFCBANK","LT"]');
-
+let sessionId=localStorage.getItem('sm_session')||'';
+let current='TCS', liveWs=null, fallbackTimer=null, lastBreakdown={};
+let watchlist=JSON.parse(localStorage.getItem('sm_watchlist')||'["TCS","RELIANCE","INFY","HDFCBANK","LT"]');
 const $=id=>document.getElementById(id);
-const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
-const fmt=v=>v==null||v===""||Number.isNaN(Number(v))?"—":Number(v).toLocaleString("en-IN",{maximumFractionDigits:2});
-const pct=v=>v==null||Number.isNaN(Number(v))?"—":Number(v).toFixed(2)+"%";
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const fmt=v=>v==null||v===''||Number.isNaN(Number(v))?'—':Number(v).toLocaleString('en-IN',{maximumFractionDigits:2});
+const pct=v=>v==null||Number.isNaN(Number(v))?'—':Number(v).toFixed(2)+'%';
 
+async function api(url,opts={}){
+  const headers={...(opts.headers||{})};
+  if(sessionId) headers['X-StockMeter-Session']=sessionId;
+  const r=await fetch(url,{...opts,headers});
+  let d={}; try{d=await r.json()}catch{}
+  if(!r.ok){const e=new Error(d.detail||d.error||`Request failed (${r.status})`);e.status=r.status;throw e}
+  return d;
+}
 function page(id,btn){
- document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
- const target=$(id); if(target) target.classList.add("active");
- document.querySelectorAll(".nav button,.toplinks button[data-page]").forEach(x=>x.classList.remove("active"));
- document.querySelectorAll(`[data-page="${id}"]`).forEach(x=>x.classList.add("active"));
- if(btn && btn.dataset && btn.dataset.page!==undefined) btn.classList.add("active");
- window.scrollTo({top:0,behavior:"smooth"});
- if(id==="news") loadNews("Indian stock market",true);
- if(id==="watchlist") renderWatch();
- if(id==="history") loadHistory();
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
+  const target=$(id);if(target)target.classList.add('active');
+  document.querySelectorAll('.nav button,.toplinks button[data-page]').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll(`[data-page="${id}"]`).forEach(x=>x.classList.add('active'));
+  window.scrollTo({top:0,behavior:'smooth'});
+  if(id==='news')loadNews('Indian stock market',true);
+  if(id==='watchlist')renderWatch();
+  if(id==='history')loadHistory();
 }
+function liveStatus(text,ok=false){const el=$('streamStatus');if(el)el.innerHTML=`<span class="live-dot" style="background:${ok?'#16a34a':'#f59e0b'}"></span> ${esc(text)}`;}
+function toast(msg){console.log(msg)}
+function openLogin(){if($('loginModal'))$('loginModal').style.display='flex'}
+function closeLogin(){if($('loginModal'))$('loginModal').style.display='none'}
+async function doLogin(){
+  const totp=$('totp').value.trim();$('loginErr').textContent='Logging in…';
+  try{const d=await api('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({totp})});sessionId=d.session_id;localStorage.setItem('sm_session',sessionId);$('loginErr').style.color='#16a34a';$('loginErr').textContent='✓ Kotak Neo login successful';closeLogin();connectLiveStream(current);await analyze(current)}
+  catch(e){$('loginErr').style.color='#dc2626';$('loginErr').textContent=e.message}
+}
+function logout(){api('/api/logout',{method:'POST'}).catch(()=>{});sessionId='';localStorage.removeItem('sm_session');if(liveWs)liveWs.close();liveStatus('Public TradingView data · login for Kotak Neo live feed',false)}
+function runAnalyze(){analyze($('globalSearch').value)}
+function analyzeFrom(id){analyze($(id).value)}
+
+function toggleWatch(){
+  if(!current)return;watchlist=watchlist.includes(current)?watchlist.filter(x=>x!==current):[...watchlist,current];
+  localStorage.setItem('sm_watchlist',JSON.stringify(watchlist));renderWatch();updateWatchButton();
+}
+function updateWatchButton(){const b=document.querySelector('.watchbtn');if(b)b.textContent=watchlist.includes(current)?'★ In Watchlist':'☆ Add to Watchlist'}
+function renderWatch(){
+  const mini=$('watchMini'),full=$('watchFull');
+  if(mini)mini.innerHTML=watchlist.map(s=>`<div class="watchrow"><span style="cursor:pointer" onclick="analyze('${esc(s)}')">★ ${esc(s)}</span><span>—</span><b class="right" onclick="analyze('${esc(s)}')" style="cursor:pointer">Analyze</b></div>`).join('')||'<div class="meta">No stocks saved.</div>';
+  if(full)full.innerHTML=watchlist.map(s=>`<button style="margin:5px;padding:8px;border:1px solid #dbe2ea;background:#fff;border-radius:6px;cursor:pointer" onclick="analyze('${esc(s)}')">★ ${esc(s)}</button>`).join('')||'<div class="meta">No stocks saved.</div>';
+}
+function setScore(id,score,max,bar){$(id).textContent=`${score??'—'}/${max}`;$(bar).style.width=`${Math.min(100,(Number(score)||0)/max*100)}%`}
 function renderBreak(b){
- const labels={fundamental:"Fundamental",technical:"Technical",valuation:"Valuation",risk:"Risk"};
- $("breakdown").innerHTML=["fundamental","technical","valuation","risk"].map(k=>{
-   let q=b[k]||{},rows=Object.entries(q.data||{}).slice(0,8).map(([a,v])=>
-     `<div class="metric"><span>${esc(a.replaceAll("_"," "))}</span><b>${esc(fmt(v))}</b></div>`).join("");
-   let c={fundamental:"blue",technical:"green",valuation:"purple",risk:"orange"}[k];
-   return `<div class="bd">
-     <h4 class="${c}">${labels[k].toUpperCase()} (${q.score??0}/${q.max??0})</h4>
-     ${rows||'<div class="meta">No detailed data</div>'}
-     ${(q.positives||[]).slice(0,3).map(x=>`<div style="font-size:9px;color:#079b53;margin-top:4px">✓ ${esc(x)}</div>`).join("")}
-     ${(q.warnings||[]).slice(0,3).map(x=>`<div style="font-size:9px;color:#d97706;margin-top:4px">⚠ ${esc(x)}</div>`).join("")}
-     <button class="details" onclick="showDetails('${k}')" style="border:0;background:none;padding:0">View Details →</button>
-   </div>`;
- }).join("");
- window.lastBreakdown=b;
+  lastBreakdown=b||{};
+  const labels={fundamental:'Fundamental',technical:'Technical',valuation:'Valuation',risk:'Risk'};
+  const colors={fundamental:'blue',technical:'green',valuation:'purple',risk:'orange'};
+  $('breakdown').innerHTML=['fundamental','technical','valuation','risk'].map(k=>{
+    const q=b?.[k]||{}, rows=Object.entries(q.data||{}).slice(0,8).map(([a,v])=>`<div class="metric"><span>${esc(a.replaceAll('_',' '))}</span><b>${esc(fmt(v))}</b></div>`).join('');
+    const pos=(q.positives||[]).slice(0,3).map(x=>`<div style="font-size:9px;color:#079b53;margin-top:4px">✓ ${esc(x)}</div>`).join('');
+    const warn=(q.warnings||[]).slice(0,3).map(x=>`<div style="font-size:9px;color:#d97706;margin-top:4px">⚠ ${esc(x)}</div>`).join('');
+    return `<div class="bd"><h4 class="${colors[k]}">${labels[k].toUpperCase()} (${q.score??0}/${q.max??0})</h4>${rows||'<div class="meta">No detailed data</div>'}${pos}${warn}<button class="details" onclick="showDetails('${k}')">View Details →</button></div>`;
+  }).join('');
 }
-
 function showDetails(category){
- const q=(window.lastBreakdown||{})[category]||{};
- const title=category.charAt(0).toUpperCase()+category.slice(1)+" Score Details";
- $("detailsTitle").textContent=title+" — "+(q.score??0)+"/"+(q.max??0);
- const rows=Object.entries(q.data||{}).map(([k,v])=>`<div class="metric" style="font-size:12px;padding:9px 0"><span>${esc(k.replaceAll("_"," "))}</span><b>${esc(fmt(v))}</b></div>`).join("");
- const positives=(q.positives||[]).map(x=>`<li style="color:#079b53;margin:6px 0">${esc(x)}</li>`).join("");
- const warnings=(q.warnings||[]).map(x=>`<li style="color:#b45309;margin:6px 0">${esc(x)}</li>`).join("");
- $("detailsBody").innerHTML=`<div class="card" style="padding:12px">${rows||'<div class="meta">No detailed metrics returned by backend.</div>'}</div>
- ${positives?`<h4>Positive Factors</h4><ul>${positives}</ul>`:""}
- ${warnings?`<h4>Warnings</h4><ul>${warnings}</ul>`:""}`;
- $("detailsModal").style.display="flex";
+  const q=lastBreakdown[category]||{};$('detailsTitle').textContent=`${category[0].toUpperCase()+category.slice(1)} Score Details — ${q.score??0}/${q.max??0}`;
+  const rows=Object.entries(q.data||{}).map(([k,v])=>`<div class="metric" style="font-size:12px;padding:9px 0"><span>${esc(k.replaceAll('_',' '))}</span><b>${esc(fmt(v))}</b></div>`).join('');
+  const p=(q.positives||[]).map(x=>`<li style="color:#079b53;margin:6px 0">${esc(x)}</li>`).join('');
+  const w=(q.warnings||[]).map(x=>`<li style="color:#b45309;margin:6px 0">${esc(x)}</li>`).join('');
+  $('detailsBody').innerHTML=`<div class="card" style="padding:12px">${rows||'<div class="meta">No detailed metrics returned.</div>'}</div>${p?`<h4>Positive Factors</h4><ul>${p}</ul>`:''}${w?`<h4>Warnings</h4><ul>${w}</ul>`:''}`;
+  $('detailsModal').style.display='flex';
 }
-function closeDetails(){ $("detailsModal").style.display="none"; }
+function closeDetails(){$('detailsModal').style.display='none'}
 
-function toggleWatch(){if(!watchlist.includes(current))watchlist.push(current);else watchlist=watchlist.filter(x=>x!==current);localStorage.setItem("sm_watchlist",JSON.stringify(watchlist));renderWatch()}
-function renderWatch(){ $("watchMini").innerHTML=watchlist.map(s=>`<div class="watchrow"><span>★ ${esc(s)}</span><span>—</span><b class="right">—</b></div>`).join("");$("watchFull").innerHTML=watchlist.map(s=>`<button style="margin:5px;padding:8px;border:1px solid #dbe2ea;background:#fff;border-radius:6px;cursor:pointer" onclick="analyze('${esc(s)}')">★ ${esc(s)}</button>`).join("")}
-
-async function loadNews(q="Indian stock market",full=false){
- try{
-  let d=await api("/api/news?q="+encodeURIComponent(q)+"&limit=12");
-  let items=d.items||[];
-  let h=items.map(x=>{
-    const link=esc(x.link||"#");
-    return `<a class="newsitem" href="${link}" target="_blank" rel="noopener noreferrer" style="display:flex;color:inherit;text-decoration:none">
-      <div class="thumb">📰</div><div><b>${esc(x.title)}</b><div class="meta">${esc(x.published)} • ${esc(x.source)}</div></div>
-    </a>`;
-  }).join("")||'<div class="meta">No news available.</div>';
-  if($("newsFull")) $("newsFull").innerHTML=h;
-  if($("newsMini")) $("newsMini").innerHTML=h;
- }catch(e){
-  const msg='<div class="meta">Market news temporarily unavailable. <button onclick="loadNews()" style="border:0;background:none;color:#1554d6;cursor:pointer">Retry</button></div>';
-  if($("newsMini"))$("newsMini").innerHTML=msg;
-  if($("newsFull"))$("newsFull").innerHTML=msg;
- }
+async function analyze(symbol){
+  symbol=(symbol||'').trim().toUpperCase();if(!symbol)return;
+  current=symbol;$('globalSearch').value=symbol;page('dashboard');
+  $('company').textContent='Loading…';$('symbol').textContent=symbol;$('logo').textContent=symbol.slice(0,3);$('score').innerHTML='—<small>/100</small>';liveStatus('Fetching market data…',false);
+  try{
+    const d=await api('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company:symbol})});
+    current=d.symbol||symbol;$('company').textContent=d.company||current;$('symbol').textContent=current;$('logo').textContent=current.slice(0,3);$('price').textContent='₹'+fmt(d.ltp);
+    const cp=Number(d.price_change_pct);$('change').textContent=Number.isFinite(cp)?`${cp>=0?'▲':'▼'} ${cp>=0?'+':''}${fmt(cp)}% · ${d.live_ltp_source||'Market data'}`:(d.live_ltp_source||'Market data');
+    $('score').innerHTML=`${d.score}<small>/100</small>`;$('decision').textContent=d.decision||'HOLD';
+    const fv=d.fair_value_analysis||{};$('fair').textContent=fv.fair_value!=null?'₹'+fmt(fv.fair_value):'₹—';$('upside').textContent=fv.upside_pct!=null?pct(fv.upside_pct):'—';$('zone').textContent=fv.buy_zone||'—';$('mos').textContent=fv.margin_of_safety_pct!=null?pct(fv.margin_of_safety_pct):'—';$('conf').textContent=d.data_confidence_pct!=null?`${d.data_confidence_pct}%`:'—';$('confline').style.width=`${Math.min(100,Number(d.data_confidence_pct)||0)}%`;
+    const b=d.breakdown||{};setScore('fscore',b.fundamental?.score,40,'fp');setScore('tscore',b.technical?.score,25,'tp');setScore('vscore',b.valuation?.score,20,'vp');setScore('rscore',b.risk?.score,15,'rp');renderBreak(b);
+    $('sumDecision').textContent=d.decision||'—';$('sumConf').textContent=d.data_confidence_pct!=null?`${d.data_confidence_pct}%`:'—';updateWatchButton();renderWatch();renderTradingView(current);
+    liveStatus(`${d.live_ltp_source||'TradingView'} · ${d.market_data_source||'Market data'}`,true);
+    try{await api('/api/history',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:current,score:d.score,decision:d.decision,ltp:d.ltp})})}catch{}
+  }catch(e){
+    $('company').textContent=`${symbol} — data unavailable`;$('symbol').textContent=symbol;$('change').textContent='';liveStatus(e.message,false);renderTradingView(symbol);
+  }
 }
-function applyLiveTick(t){
- if(!t || t.ltp==null || (t.symbol && t.symbol.replace(/-EQ$/,'').toUpperCase()!==current)) return;
- $("price").textContent="₹"+fmt(t.ltp);
- if(t.change_pct!=null){const cp=Number(t.change_pct);const sign=cp>=0?"+":"";$("change").innerHTML=(cp>=0?"▲":"▼")+" Live · "+sign+fmt(cp)+"%";}
- liveStatus("LIVE · Kotak Neo WebSocket",true);
+
+async function loadNews(q='Indian stock market',full=false){
+  try{
+    const d=await api('/api/news?q='+encodeURIComponent(q)+'&limit=12');
+    const h=(d.items||[]).map(x=>`<a class="newsitem" href="${esc(x.link||'#')}" target="_blank" rel="noopener noreferrer" style="display:flex;color:inherit;text-decoration:none"><div class="thumb">📰</div><div><b>${esc(x.title)}</b><div class="meta">${esc(x.published)} • ${esc(x.source||d.provider||'News')}</div></div></a>`).join('')||'<div class="meta">No news available.</div>';
+    if($('newsMini'))$('newsMini').innerHTML=h;if($('newsFull'))$('newsFull').innerHTML=h;
+  }catch(e){const msg=`<div class="meta">News temporarily unavailable. <button onclick="loadNews('${esc(q)}')" style="border:0;background:none;color:#1554d6;cursor:pointer">Retry</button></div>`;if($('newsMini'))$('newsMini').innerHTML=msg;if($('newsFull'))$('newsFull').innerHTML=msg}
+}
+
+function tvSymbol(sym){const s=String(sym||'TCS').toUpperCase().replace(/[^A-Z0-9_]/g,'');return s==='SENSEX'?'BSE:SENSEX':'NSE:'+s}
+function renderTradingView(sym){
+  const box=$('tvChart');if(!box)return;box.innerHTML='<div class="tradingview-widget-container" style="height:100%;width:100%"><div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div></div>';
+  const script=document.createElement('script');script.src='https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';script.async=true;script.text=JSON.stringify({autosize:true,symbol:tvSymbol(sym),interval:'5',timezone:'Asia/Kolkata',theme:'light',style:'1',locale:'en',allow_symbol_change:true,withdateranges:true,hide_top_toolbar:false,hide_legend:false,save_image:false,support_host:'https://www.tradingview.com'});box.querySelector('.tradingview-widget-container').appendChild(script);
 }
 function connectLiveStream(sym){
- if(!sessionId){liveStatus("Login required for live broker feed");return;}
- if(liveWs){try{liveWs.close()}catch(e){}liveWs=null;}
- clearInterval(fallbackTimer);fallbackTimer=null;
- const proto=location.protocol==="https:"?"wss":"ws";
- liveWs=new WebSocket(`${proto}://${location.host}/ws/live?session=${encodeURIComponent(sessionId)}&symbol=${encodeURIComponent(sym)}`);
- liveWs.onopen=()=>liveStatus("LIVE · Kotak Neo WebSocket",true);
- liveWs.onmessage=e=>{try{const d=JSON.parse(e.data);if(d.type==="tick")applyLiveTick(d);else if(d.type==="stream_status")liveStatus("LIVE · Kotak Neo WebSocket",true);else if(d.type==="error")liveStatus("Live stream error — fallback polling",false);}catch(err){}};
- liveWs.onerror=()=>{liveStatus("Live stream unavailable — fallback polling",false);if(!fallbackTimer)fallbackTimer=setInterval(()=>{if(current)analyze(current,true)},15000);};
- liveWs.onclose=()=>{if(document.visibilityState!=="hidden"){liveStatus("Live stream reconnecting…",false);setTimeout(()=>{if(sessionId&&current)connectLiveStream(current)},3000);}};
+  if(!sessionId){liveStatus('Public TradingView data · login for Kotak Neo live feed',false);return}
+  try{if(liveWs)liveWs.close();const proto=location.protocol==='https:'?'wss':'ws';liveWs=new WebSocket(`${proto}://${location.host}/ws/live?session=${encodeURIComponent(sessionId)}&symbol=${encodeURIComponent(sym)}`);liveWs.onopen=()=>liveStatus('LIVE · Kotak Neo WebSocket',true);liveWs.onmessage=e=>{try{const d=JSON.parse(e.data);if(d.type==='tick'&&d.ltp!=null&&String(d.symbol||'').replace(/-EQ$/,'').toUpperCase()===current){$('price').textContent='₹'+fmt(d.ltp);$('change').textContent='● LIVE · '+(d.change_pct!=null?pct(d.change_pct):'');}}catch{}};liveWs.onerror=()=>liveStatus('WebSocket unavailable · using scanner data',false);liveWs.onclose=()=>{if(sessionId)setTimeout(()=>connectLiveStream(current),3000)}}catch{liveStatus('Live stream unavailable',false)}
 }
-async function syncHoldings(){
- try{const d=await api("/api/account/holdings");const items=d.items||[];$("holdStatus").textContent=`${items.length} holdings synced`;if(items.length){$("portInput").value=items.map(x=>{const sym=x.symbol||x.displaySymbol||x.tradingSymbol;const q=Number(x.quantity||x.sellableQuantity||0);const avg=Number(x.averagePrice||x.avgPrice||0);return `${sym}:${q}:${avg}`;}).filter(x=>x.split(":")[1]>0).join(",");}await analyzePortfolio();}catch(e){if(e.login)openLogin();else $("holdStatus").textContent="Sync failed: "+e.message;}}
+async function loadMarketOverview(){try{const d=await api('/api/market-overview');$('marketTape').innerHTML=(d.items||[]).map(x=>`<span><b>${esc(x.symbol)}</b> ₹${fmt(x.price)} <b style="color:${Number(x.change_pct)>=0?'#24d47e':'#ff7373'}">${Number(x.change_pct)>=0?'+':''}${fmt(x.change_pct)}%</b></span>`).join('')||'<span>Market data unavailable</span>'}catch{$('marketTape').innerHTML='<span>Market overview temporarily unavailable</span>'}}
 
-function tvSymbol(sym){return "NSE:"+String(sym||"TCS").toUpperCase().replace(/[^A-Z0-9_]/g,"")}
-function renderTradingView(sym){
- const box=$("tvChart"); if(!box)return;
- box.innerHTML='<div class="tradingview-widget-container" style="height:100%;width:100%"><div class="tradingview-widget-container__widget" style="height:calc(100% - 32px);width:100%"></div></div>';
- const script=document.createElement("script");script.type="text/javascript";script.src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";script.async=true;
- script.text=JSON.stringify({autosize:true,symbol:tvSymbol(sym),interval:"5",timezone:"exchange",theme:"light",backgroundColor:"rgba(255,255,255,1)",style:"1",locale:"en",allow_symbol_change:true,withdateranges:true,hide_top_toolbar:false,hide_legend:false,save_image:false,calendar:false,support_host:"https://www.tradingview.com"});
- box.querySelector(".tradingview-widget-container").appendChild(script);
-}
-async function loadMarketOverview(){
- try{const d=await fetch("/api/market-overview").then(r=>r.json());const items=d.items||[];$("marketTape").innerHTML=items.map(x=>`<span><b>${esc(x.symbol)}</b> ₹${fmt(x.price)} <b style="color:${Number(x.change_pct)>=0?'#24d47e':'#ff7373'}">${Number(x.change_pct)>=0?'+':''}${fmt(x.change_pct)}%</b></span>`).join("")||"<span>Market data unavailable</span>"}catch(e){$("marketTape").innerHTML="<span>Market overview temporarily unavailable</span>"}
-}
-let liveTimer=null;
-function startLive(){if(sessionId)connectLiveStream(current)}
+async function compareStocks(){const symbols=$('cmpInput').value.split(',').map(x=>x.trim()).filter(Boolean);$('cmpResult').innerHTML='Loading…';try{const d=await api('/api/compare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbols})});$('cmpResult').innerHTML=`<table class="table"><tr><th>Stock</th><th>Price</th><th>Score</th><th>Decision</th></tr>${(d.results||[]).map(x=>`<tr onclick="analyze('${esc(x.symbol)}')" style="cursor:pointer"><td>${esc(x.symbol)}</td><td>₹${fmt(x.ltp)}</td><td>${x.score}/100</td><td>${esc(x.decision)}</td></tr>`).join('')}</table>`}catch(e){$('cmpResult').innerHTML='<div class="meta">❌ '+esc(e.message)+'</div>'}}
+async function screenStocks(){const symbols=$('scrInput').value.split(',').map(x=>x.trim()).filter(Boolean);const min=$('minScore').value;const body={symbols};if(min)body.min_score=Number(min);$('scrResult').innerHTML='Scanning…';try{const d=await api('/api/screener',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});$('scrResult').innerHTML=`<table class="table"><tr><th>Stock</th><th>Score</th><th>Decision</th><th>PE</th><th>ROE</th><th>RSI</th></tr>${(d.results||[]).map(x=>`<tr onclick="analyze('${esc(x.symbol)}')" style="cursor:pointer"><td>${esc(x.symbol)}</td><td>${x.score}</td><td>${esc(x.decision)}</td><td>${fmt(x.raw_metrics?.pe)}</td><td>${pct(x.raw_metrics?.roe_pct)}</td><td>${fmt(x.raw_metrics?.rsi)}</td></tr>`).join('')}</table>`}catch(e){$('scrResult').innerHTML='<div class="meta">❌ '+esc(e.message)+'</div>'}}
+function parsePortfolio(){return $('portInput').value.split(',').map(x=>{const [symbol,quantity,avg_price]=x.trim().split(':');return symbol&&Number(quantity)>0?{symbol,quantity:Number(quantity),avg_price:Number(avg_price||0)}:null}).filter(Boolean)}
+async function analyzePortfolio(){const holdings=parsePortfolio();$('portResult').innerHTML='Analyzing…';try{const d=await api('/api/portfolio',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({holdings})});$('portResult').innerHTML=`<p><b>Invested:</b> ₹${fmt(d.total_invested)} &nbsp; <b>Value:</b> ₹${fmt(d.total_value)} &nbsp; <b>P/L:</b> ₹${fmt(d.pnl)} &nbsp; <b>Score:</b> ${fmt(d.portfolio_score)}/100</p><table class="table"><tr><th>Stock</th><th>Qty</th><th>LTP</th><th>P/L</th><th>Score</th></tr>${(d.rows||[]).map(x=>`<tr><td>${esc(x.symbol)}</td><td>${fmt(x.quantity)}</td><td>₹${fmt(x.ltp)}</td><td>${fmt(x.pnl)}</td><td>${x.score}</td></tr>`).join('')}</table>`}catch(e){$('portResult').innerHTML='<div class="meta">❌ '+esc(e.message)+'</div>'}}
+async function syncHoldings(){try{const d=await api('/api/account/holdings');const items=d.items||[];$('holdStatus').textContent=`${items.length} holdings synced`;if(items.length){$('portInput').value=items.map(x=>{const s=x.symbol||x.displaySymbol||x.tradingSymbol;const q=Number(x.quantity||x.sellableQuantity||0);const a=Number(x.averagePrice||x.avgPrice||0);return `${s}:${q}:${a}`}).filter(x=>x.split(':')[1]>0).join(',');}await analyzePortfolio()}catch(e){$('holdStatus').textContent='Login required to sync holdings';openLogin()}}
+async function loadHistory(){const s=$('histInput').value.trim().toUpperCase();try{const d=await api('/api/history?symbol='+encodeURIComponent(s)+'&limit=200');$('histResult').innerHTML=(d.items||[]).map(x=>`<div class="metric">${esc(new Date(x.time).toLocaleString())} · <b>${esc(x.symbol)}</b> · ${x.score}/100 · ${esc(x.decision)} · ₹${fmt(x.ltp)}</div>`).join('')||'<div class="meta">No history yet.</div>'}catch(e){$('histResult').innerHTML='<div class="meta">❌ '+esc(e.message)+'</div>'}}
+async function checkAlert(){const symbol=$('alertInput').value.trim().toUpperCase();const score=$('alertScore').value;const body={symbol};if(score)body.min_score=Number(score);try{const d=await api('/api/alerts/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});$('alertResult').innerHTML=`<b>${esc(d.symbol)}</b> · ₹${fmt(d.ltp)} · ${d.score}/100 · ${esc(d.decision)}<br>${d.triggered?'🔔 '+(d.triggers||[]).map(esc).join(', '):'No trigger matched.'}`}catch(e){$('alertResult').innerHTML='<div class="meta">❌ '+esc(e.message)+'</div>'}}
 
-renderWatch();loadNews();loadMarketOverview();analyze("TCS");renderTradingView("TCS");setInterval(loadNews,120000);setInterval(loadMarketOverview,10000);
+renderWatch();loadNews();loadMarketOverview();renderTradingView('TCS');analyze('TCS');setInterval(loadNews,120000);setInterval(loadMarketOverview,10000);
 </script>
 </body></html>
