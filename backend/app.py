@@ -101,6 +101,16 @@ class HistoryRequest(BaseModel):
     decision: str = ""
     ltp: Optional[float] = None
 
+# Existing per-stock screener default. The NSE-wide market leaderboard
+# below is not limited by this list.
+DEFAULT_UNIVERSE = [
+    "RELIANCE","HDFCBANK","ICICIBANK","BHARTIARTL","TCS","INFY","ITC",
+    "SBIN","LT","AXISBANK","KOTAKBANK","M&M","HINDUNILVR","BAJFINANCE",
+    "MARUTI","SUNPHARMA","HCLTECH","TITAN","ULTRACEMCO","ADANIENT",
+    "NTPC","ONGC","POWERGRID","TATASTEEL","TATAMOTORS","WIPRO","TECHM",
+    "ASIANPAINT","NESTLEIND","JSWSTEEL"
+]
+
 # =========================================================
 # HELPER FUNCTIONS
 # =========================================================
@@ -210,8 +220,52 @@ def _nse_variation(kind,limit=10):
 def _tv_scan_tickers(tickers,columns,sort_by=None,sort_order="desc",limit=20):
     payload={"symbols":{"tickers":tickers,"query":{"types":[]}},"columns":columns,"range":[0,limit]}
     if sort_by: payload["sort"]={"sortBy":sort_by,"sortOrder":sort_order}
-    r=requests.post("https://scanner.tradingview.com/india/scan",json=payload,headers={"User-Agent":"Mozilla/5.0","Content-Type":"application/json"},timeout=10)
+    r=requests.post("https://scanner.tradingview.com/india/scan",json=payload,headers={"User-Agent":"Mozilla/5.0","Content-Type":"application/json"},timeout=15)
     r.raise_for_status(); return [dict(zip(columns,row.get("d",[]))) for row in r.json().get("data",[])]
+
+def _tv_scan_all_nse(columns,sort_by=None,sort_order="desc",limit=25):
+    """Scan the broad NSE primary-equity universe instead of NIFTY 50 only."""
+    payload={
+        "symbols":{"tickers":[],"query":{"types":["stock"]}},
+        "columns":columns,
+        "filter":[
+            {"left":"is_primary","operation":"equal","right":True},
+            {"left":"exchange","operation":"equal","right":"NSE"}
+        ],
+        "range":[0, max(1, min(int(limit), 5000))]
+    }
+    if sort_by:
+        payload["sort"]={"sortBy":sort_by,"sortOrder":sort_order}
+
+    r=requests.post(
+        "https://scanner.tradingview.com/india/scan",
+        json=payload,
+        headers={"User-Agent":"Mozilla/5.0","Content-Type":"application/json","Accept":"application/json"},
+        timeout=20
+    )
+    r.raise_for_status()
+    body=r.json()
+    rows=body.get("data",[]) if isinstance(body,dict) else []
+    return [dict(zip(columns,row.get("d",[]))) for row in rows]
+
+def _tv_rows_to_movers(rows, source="TradingView NSE scanner"):
+    out=[]
+    for row in rows:
+        symbol=str(row.get("name") or row.get("description") or "").upper().replace("NSE:","")
+        if not symbol:
+            continue
+        out.append({
+            "symbol":symbol,
+            "name":row.get("description") or symbol,
+            "price":num(row.get("close")),
+            "change_pct":num(row.get("change")),
+            "change_abs":num(row.get("change_abs")),
+            "return_1m_pct":num(row.get("Perf.1M")),
+            "volume":num(row.get("volume")),
+            "market_cap":num(row.get("market_cap_basic")),
+            "source":source
+        })
+    return out
 
 def _nifty50_fallback_pulse():
     symbols="RELIANCE HDFCBANK ICICIBANK BHARTIARTL TCS INFY ITC SBIN LT AXISBANK KOTAKBANK M&M HINDUNILVR BAJFINANCE MARUTI SUNPHARMA HCLTECH TITAN ULTRACEMCO ADANIENT NTPC ONGC POWERGRID TATASTEEL TATAMOTORS WIPRO TECHM ASIANPAINT NESTLEIND JSWSTEEL COALINDIA BAJAJFINSV ADANIPORTS HINDALCO GRASIM CIPLA EICHERMOT DRREDDY DIVISLAB APOLLOHOSP TATACONSUM BPCL HEROMOTOCO BRITANNIA SHRIRAMFIN TRENT BEL INDUSINDBK SBILIFE HDFCLIFE".split()
@@ -222,13 +276,72 @@ def _nifty50_fallback_pulse():
         out.append({"symbol":sym,"price":num(x.get("close")),"change_pct":num(x.get("change")),"change_abs":num(x.get("change_abs")),"volume":num(x.get("volume")),"source":"TradingView"})
     return out
 
+def get_monthly_movers(limit=10):
+    """Top and bottom 1-month performers across NSE primary equities."""
+    limit=max(5,min(int(limit),25))
+    key=f"monthly-movers:{limit}"
+    cached=_cached(key)
+    if cached is not None:
+        return cached
+
+    cols=["name","description","close","change","change_abs","volume","market_cap_basic","Perf.1M"]
+    try:
+        top_rows=_tv_scan_all_nse(cols,"Perf.1M","desc",max(limit,25))
+        bottom_rows=_tv_scan_all_nse(cols,"Perf.1M","asc",max(limit,25))
+        gainers=_tv_rows_to_movers(top_rows)[:limit]
+        losers=_tv_rows_to_movers(bottom_rows)[:limit]
+        gainers=[x for x in gainers if x.get("return_1m_pct") is not None]
+        losers=[x for x in losers if x.get("return_1m_pct") is not None]
+
+        return _put_cache(key,{
+            "gainers_1m":gainers,
+            "losers_1m":losers,
+            "universe":"NSE primary equity stocks",
+            "period":"1M",
+            "source":"TradingView NSE-wide scanner",
+            "updated_at":datetime.now(timezone.utc).isoformat()
+        })
+    except Exception as e:
+        return _put_cache(key,{
+            "gainers_1m":[],
+            "losers_1m":[],
+            "universe":"NSE primary equity stocks",
+            "period":"1M",
+            "source":"unavailable",
+            "error":str(e),
+            "updated_at":datetime.now(timezone.utc).isoformat()
+        })
+
 def get_top_movers(limit=10):
     key=f"movers:{limit}"; cached=_cached(key)
     if cached is not None:return cached
-    try: g=_nse_variation("gainers",limit); l=_nse_variation("losers",limit); src="NSE"
+    try:
+        g=_nse_variation("gainers",limit)
+        l=_nse_variation("losers",limit)
+        src="NSE"
     except Exception:
-        rows=_nifty50_fallback_pulse(); g=sorted(rows,key=lambda x:x.get("change_pct") if x.get("change_pct") is not None else -999,reverse=True)[:limit]; l=sorted(rows,key=lambda x:x.get("change_pct") if x.get("change_pct") is not None else 999)[:limit]; src="TradingView NIFTY 50 fallback"
-    return _put_cache(key,{"gainers":g,"losers":l,"source":src,"updated_at":datetime.now(timezone.utc).isoformat()})
+        # Fallback is NSE-wide, not NIFTY 50-only.
+        cols=["name","description","close","change","change_abs","volume"]
+        try:
+            rows_up=_tv_scan_all_nse(cols,"change","desc",max(limit,25))
+            rows_dn=_tv_scan_all_nse(cols,"change","asc",max(limit,25))
+            g=_tv_rows_to_movers(rows_up)[:limit]
+            l=_tv_rows_to_movers(rows_dn)[:limit]
+            src="TradingView NSE-wide fallback"
+        except Exception:
+            rows=_nifty50_fallback_pulse()
+            g=sorted(rows,key=lambda x:x.get("change_pct") if x.get("change_pct") is not None else -999,reverse=True)[:limit]
+            l=sorted(rows,key=lambda x:x.get("change_pct") if x.get("change_pct") is not None else 999)[:limit]
+            src="TradingView NIFTY 50 emergency fallback"
+
+    monthly=get_monthly_movers(limit)
+    return _put_cache(key,{
+        "gainers":g,
+        "losers":l,
+        "monthly":monthly,
+        "source":src,
+        "updated_at":datetime.now(timezone.utc).isoformat()
+    })
 
 SECTOR_TICKERS={"NIFTY Auto":"NSE:CNXAUTO","NIFTY Bank":"NSE:BANKNIFTY","NIFTY IT":"NSE:CNXIT","NIFTY Pharma":"NSE:CNXPHARMA","NIFTY Metal":"NSE:CNXMETAL","NIFTY FMCG":"NSE:CNXFMCG","NIFTY Realty":"NSE:CNXREALTY","NIFTY Media":"NSE:CNXMEDIA","NIFTY PSU Bank":"NSE:CNXPSUBANK","NIFTY Private Bank":"NSE:NIFTYPVTBANK","NIFTY Financial Services":"NSE:NIFTYFINSERVICE","NIFTY Energy":"NSE:NIFTYENERGY","NIFTY Healthcare":"NSE:NIFTYHEALTHCARE","NIFTY Consumer Durables":"NSE:NIFTYCONSUMERDURABLES","NIFTY Oil & Gas":"NSE:NIFTYOILANDGAS"}
 
@@ -979,7 +1092,7 @@ def health():
     return {
         "ok": True,
         "service": "StockMeter",
-        "version": "5.0-market-pulse",
+        "version": "5.1-nse-wide-movers",
         "active_sessions": len(sessions)
     }
 
@@ -1071,7 +1184,13 @@ def api_market_pulse(limit: int = 10):
     return {"movers":get_top_movers(limit),"sectors":get_sector_performance(),"breadth":get_market_breadth(),"fii_dii":get_fii_dii(),"updated_at":datetime.now(timezone.utc).isoformat()}
 
 @app.get("/api/movers")
-def api_movers(limit: int = 10): return get_top_movers(max(5,min(int(limit),25)))
+def api_movers(limit: int = 10):
+    return get_top_movers(max(5,min(int(limit),25)))
+
+@app.get("/api/monthly-movers")
+def api_monthly_movers(limit: int = 10):
+    """NSE-wide top and bottom 1-month performers."""
+    return get_monthly_movers(max(5,min(int(limit),25)))
 
 @app.get("/api/sectors")
 def api_sectors(): return get_sector_performance()
@@ -1530,3 +1649,4 @@ def api_alerts_evaluate(request: Request):
             results.append({"id":alert_id,"alert":alert,"result":check})
         except Exception as e: results.append({"id":alert_id,"alert":alert,"error":str(e)})
     return {"items":results,"updated_at":datetime.now(timezone.utc).isoformat()}
+
