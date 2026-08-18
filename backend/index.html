@@ -191,31 +191,6 @@ button,input,select{font:inherit}.app{min-height:100vh;display:flex}.sidebar{wid
 @media(max-width:650px){.nse-wide-grid{grid-template-columns:1fr}}
 </style>
 
-
-<style>
-.kotak-chart-wrap{
-  position:relative;width:100%;height:330px;background:#fff;
-  border:1px solid #dbe2ea;border-radius:7px;overflow:hidden;
-}
-#kotakChartCanvas{display:block;width:100%;height:100%}
-.kotak-chart-overlay{
-  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  flex-direction:column;gap:10px;background:rgba(255,255,255,.90);
-  z-index:2;
-}
-.kotak-chart-msg{font-size:13px;color:#475569;font-weight:700;text-align:center}
-.kotak-chart-login{
-  border:1px solid #0f766e;background:#fff;color:#0f766e;
-  border-radius:7px;padding:7px 13px;font-weight:800;cursor:pointer;
-}
-.kotak-chart-meta{
-  display:flex;justify-content:space-between;gap:10px;
-  margin-top:7px;font-size:10px;color:#64748b;font-weight:700;
-}
-.kotak-range{cursor:pointer}
-.kotak-range:not(.active){opacity:.7}
-</style>
-
 </head>
 <body>
 <div class="app">
@@ -277,34 +252,7 @@ button,input,select{font:inherit}.app{min-height:100vh;display:flex}.sidebar{wid
 
 <div class="below">
     <div class="card breakcard"><div class="sectiontitle">Detailed Score Breakdown ⓘ</div><div class="breakgrid" id="breakdown"><div class="meta">Analyze a stock to load score details.</div></div></div>
-    <div class="card chartcard">
-      <div class="sectiontitle">
-        Price Chart
-        <span class="livepill" style="float:right"><span class="live-dot"></span>KOTAK LIVE</span>
-      </div>
-      <div class="periods">
-        <button class="kotak-range active" data-range="1D" onclick="setKotakRange('1D',this)">1D</button>
-        <button class="kotak-range" data-range="1M" onclick="setKotakRange('1M',this)">1M</button>
-        <button class="kotak-range" data-range="3M" onclick="setKotakRange('3M',this)">3M</button>
-        <button class="kotak-range" data-range="6M" onclick="setKotakRange('6M',this)">6M</button>
-        <button class="kotak-range" data-range="1Y" onclick="setKotakRange('1Y',this)">1Y</button>
-      </div>
-      <div class="kotak-chart-wrap" id="tvChart">
-        <canvas id="kotakChartCanvas"></canvas>
-        <div id="kotakChartOverlay" class="kotak-chart-overlay">
-          <div class="kotak-chart-msg">🔐 Login to Kotak Neo for live chart</div>
-          <button onclick="openLogin()" class="kotak-chart-login">Kotak Login</button>
-        </div>
-      </div>
-      <div class="kotak-chart-meta">
-        <span id="kotakChartSource">Kotak Neo live market data</span>
-        <span id="kotakChartPrice">₹—</span>
-      </div>
-      <div class="chartnote">
-        Live intraday candles are built from Kotak Neo WebSocket ticks.
-        Historical 1M/3M/6M/1Y candles are not exposed by the current Kotak Neo Python SDK.
-      </div>
-    </div>
+    <div class="card chartcard"><div class="sectiontitle">Price Chart <span class="livepill" style="float:right"><span class="live-dot"></span>LIVE</span></div><div class="periods"><button onclick="setTVRange('1M',this)">1M</button><button onclick="setTVRange('3M',this)">3M</button><button onclick="setTVRange('6M',this)">6M</button><button class="active" onclick="setTVRange('1Y',this)">1Y</button><button onclick="setTVRange('3Y',this)">3Y</button><button onclick="setTVRange('5Y',this)">5Y</button></div><div class="tvwrap" id="tvChart" style="height:330px;background:#fff"><div id="tvWidget" style="width:100%;height:100%"></div></div><div style="display:flex;justify-content:flex-end;margin-top:6px"><a id="tvOpenLink2" href="https://www.tradingview.com/symbols/NSE-TCS/" target="_blank" rel="noopener noreferrer" style="color:#1554d6;font-size:10px;font-weight:800;text-decoration:none">Open this stock directly on TradingView ↗</a></div><div class="chartnote">TradingView market chart • live/delayed data depends on exchange/data-feed permissions. Kotak Neo live ticks are used separately when logged in. <a id="tvOpenLink" href="https://www.tradingview.com/symbols/NSE-TCS/" target="_blank" rel="noopener noreferrer" style="float:right;color:#1554d6;font-weight:800;text-decoration:none">Open in TradingView ↗</a></div></div>
   </div>
 
   <div class="below" style="grid-template-columns:1fr 1fr;margin-top:14px">
@@ -567,10 +515,14 @@ function liveStatus(text,ok=false){const el=$('streamStatus');if(el)el.innerHTML
 function toast(msg){console.log(msg)}
 function openLogin(){if($('loginModal'))$('loginModal').style.display='flex'}
 function closeLogin(){if($('loginModal'))$('loginModal').style.display='none'}
+async function doLogin(){
+  const totp=$('totp').value.trim();$('loginErr').textContent='Logging in…';
+  try{const d=await api('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({totp})});sessionId=d.session_id;localStorage.setItem('sm_session',sessionId);$('loginErr').style.color='#16a34a';$('loginErr').textContent='✓ Kotak Neo login successful';closeLogin();await analyze(current)}
+  catch(e){$('loginErr').style.color='#dc2626';$('loginErr').textContent=e.message}
+}
 
 function updateKotakAuthButton(){
-  const b=$('kotakAuthBtn');
-  if(!b)return;
+  const b=$('kotakAuthBtn'); if(!b)return;
   if(sessionId){
     b.textContent='Logout Kotak';
     b.style.color='#dc2626';
@@ -581,45 +533,16 @@ function updateKotakAuthButton(){
     b.onclick=openLogin;
   }
 }
+function handleKotakAuth(){ if(sessionId) logout(); else openLogin(); }
 
-function handleKotakAuth(){if(sessionId)logout();else openLogin()}
-
-async function doLogin(){
-  const totp=$('totp').value.trim();
-  $('loginErr').textContent='Logging in…';
-  try{
-    const d=await api('/api/login',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({totp})
-    });
-    sessionId=d.session_id;
-    localStorage.setItem('sm_session',sessionId);
-    updateKotakAuthButton();
-    $('loginErr').style.color='#16a34a';
-    $('loginErr').textContent='✓ Kotak Neo login successful';
-    closeLogin();
-    await analyze(current);
-  }catch(e){
-    $('loginErr').style.color='#dc2626';
-    $('loginErr').textContent=e.message;
-  }
-}
-
-async function logout(){
-  kotakChartDisconnect();
-  try{await api('/api/logout',{method:'POST'})}catch{}
+function logout(){
+  api('/api/logout',{method:'POST'}).catch(()=>{});
   sessionId='';
   localStorage.removeItem('sm_session');
   updateKotakAuthButton();
-  kotakChartTicks=[];
-  kotakChartShowOverlay(true,'🔐 Login to Kotak Neo for live chart');
-  drawKotakChart();
-  liveStatus('Login to Kotak Neo for live chart',false);
-  if($('change'))$('change').textContent='Public market data';
-  try{await analyze(current)}catch{}
-}
-
+  liveStatus('Public TradingView data · login for Kotak Neo live feed',false);
+  try{renderTradingViewChart(current,tvRange)}catch{}
+}).catch(()=>{});sessionId='';localStorage.removeItem('sm_session');liveStatus('Public TradingView data · login for Kotak Neo live feed',false)}
 function runAnalyze(){analyze($('globalSearch').value)}
 function analyzeFrom(id){analyze($(id).value)}
 
@@ -702,195 +625,30 @@ let pricePollTimer=null; let newsQuery='Indian stock market'; let tvRange='1Y';
 function loadNewsCategory(q,btn){newsQuery=q;document.querySelectorAll('.filters button').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');loadNews(q,false)}
 function tvSymbol(sym){return `NSE:${String(sym||'TCS').toUpperCase().replace(/[^A-Z0-9_]/g,'')}`}
 
-let kotakWs=null;
-let kotakReconnectTimer=null;
-let kotakChartTicks=[];
-let kotakChartRange='1D';
+function renderTradingViewChart(sym= current, range=tvRange){
+  const host=$('tvWidget'); if(!host)return;
+  const symbol=tvSymbol(sym);
+  const tvUrl=`https://www.tradingview.com/symbols/NSE-${encodeURIComponent(String(sym||'TCS').toUpperCase())}/`;
 
-function kotakChartDisconnect(){
-  if(kotakReconnectTimer){clearTimeout(kotakReconnectTimer);kotakReconnectTimer=null}
-  if(kotakWs){
-    try{kotakWs.onclose=null;kotakWs.close()}catch{}
-    kotakWs=null;
-  }
+  const tvLink=$('tvOpenLink'); if(tvLink) tvLink.href=tvUrl;
+  const tvLink2=$('tvOpenLink2'); if(tvLink2) tvLink2.href=tvUrl;
+
+  host.innerHTML=`<iframe src="https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(symbol)}&interval=D&theme=light&style=1&timezone=Asia%2FKolkata&saveimage=0&toolbarbg=f1f3f6&hide_top_toolbar=0&hide_legend=0&allow_symbol_change=1" width="100%" height="100%" frameborder="0" allowtransparency="true" scrolling="no" allowfullscreen=""></iframe>`;
 }
 
-function kotakChartShowOverlay(show,msg='🔐 Login to Kotak Neo for live chart'){
-  const o=$('kotakChartOverlay');
-  if(!o)return;
-  o.style.display=show?'flex':'none';
-  const m=o.querySelector('.kotak-chart-msg');
-  if(m)m.textContent=msg;
-}
+function resetLiveChart(){renderTradingViewChart(current,tvRange)}
+function protectChartWheel(){const w=$('tvChart');if(!w)return;w.style.overscrollBehavior='contain';w.style.touchAction='auto';}
 
-function kotakChartBuildCandles(){
-  const buckets=new Map();
-  for(const t of kotakChartTicks){
-    const price=Number(t.ltp);
-    const dt=new Date(t.ts||Date.now());
-    if(!Number.isFinite(price)||Number.isNaN(dt.getTime()))continue;
-    dt.setSeconds(0,0);
-    const key=dt.getTime();
-    let c=buckets.get(key);
-    if(!c)c={time:key,open:price,high:price,low:price,close:price};
-    else{
-      c.high=Math.max(c.high,price);
-      c.low=Math.min(c.low,price);
-      c.close=price;
-    }
-    buckets.set(key,c);
-  }
-  return [...buckets.values()].sort((a,b)=>a.time-b.time).slice(-180);
-}
-
-function drawKotakChart(){
-  const canvas=$('kotakChartCanvas'); if(!canvas)return;
-  const rect=canvas.getBoundingClientRect();
-  const dpr=window.devicePixelRatio||1;
-  const W=Math.max(300,rect.width), H=Math.max(250,rect.height);
-  canvas.width=W*dpr;canvas.height=H*dpr;
-  const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);
-  ctx.clearRect(0,0,W,H);
-
-  const candles=kotakChartBuildCandles();
-  const pad={l:12,r:58,t:12,b:28};
-  const cw=W-pad.l-pad.r,ch=H-pad.t-pad.b;
-
-  ctx.font='11px Arial';
-  ctx.fillStyle='#64748b';
-  ctx.strokeStyle='#e8edf3';
-  ctx.lineWidth=1;
-
-  for(let i=0;i<5;i++){
-    const y=pad.t+(ch*i/4);
-    ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();
-  }
-
-  if(!candles.length){
-    ctx.fillStyle='#94a3b8';
-    ctx.font='13px Arial';
-    ctx.textAlign='center';
-    ctx.fillText('Waiting for Kotak Neo live ticks…',W/2,H/2);
-    return;
-  }
-
-  const lo=Math.min(...candles.map(c=>c.low));
-  const hi=Math.max(...candles.map(c=>c.high));
-  const span=Math.max(hi-lo,Math.abs(hi)*0.001,0.05);
-  const minP=lo-span*0.08,maxP=hi+span*0.08;
-  const yOf=p=>pad.t+(maxP-p)/(maxP-minP)*ch;
-  const step=cw/Math.max(candles.length,1);
-  const body=Math.max(2,step*0.62);
-
-  // Price scale
-  ctx.fillStyle='#64748b';ctx.textAlign='left';
-  for(let i=0;i<5;i++){
-    const p=maxP-(maxP-minP)*i/4;
-    ctx.fillText('₹'+fmt(p),W-pad.r+6,pad.t+ch*i/4+4);
-  }
-
-  candles.forEach((c,i)=>{
-    const x=pad.l+step*i+step/2;
-    const yo=yOf(c.open),yc=yOf(c.close),yh=yOf(c.high),yl=yOf(c.low);
-    const up=c.close>=c.open;
-    ctx.strokeStyle=up?'#0ea66a':'#ef4444';
-    ctx.fillStyle=up?'#0ea66a':'#ef4444';
-    ctx.beginPath();ctx.moveTo(x,yh);ctx.lineTo(x,yl);ctx.stroke();
-    const top=Math.min(yo,yc), bh=Math.max(2,Math.abs(yc-yo));
-    ctx.fillRect(x-body/2,top,body,bh);
-  });
-
-  const last=candles[candles.length-1];
-  ctx.fillStyle='#1554d6';ctx.textAlign='left';
-  ctx.fillText('Live ₹'+fmt(last.close),W-pad.r-72,H-8);
-}
-
-function addKotakTicks(items){
-  if(!Array.isArray(items))return;
-  kotakChartTicks = items
-    .filter(x=>x && Number.isFinite(Number(x.ltp)))
-    .map(x=>({ts:x.ts||x.raw_time||Date.now(),ltp:Number(x.ltp)}))
-    .slice(-4000);
-  drawKotakChart();
-  const c=kotakChartBuildCandles().at(-1);
-  if(c && $('kotakChartPrice'))$('kotakChartPrice').textContent='₹'+fmt(c.close);
-}
-
-function openKotakChart(sym){
-  kotakChartDisconnect();
-  kotakChartTicks=[];
-  if(!sessionId){
-    kotakChartShowOverlay(true);
-    drawKotakChart();
-    return;
-  }
-
-  kotakChartShowOverlay(false);
-  const proto=location.protocol==='https:'?'wss:':'ws:';
-  const url=`${proto}//${location.host}/ws/live?session=${encodeURIComponent(sessionId)}&symbol=${encodeURIComponent(sym)}`;
-
-  try{kotakWs=new WebSocket(url)}catch(e){
-    kotakChartShowOverlay(true,'Kotak live chart connection failed');
-    return;
-  }
-
-  kotakWs.onopen=()=>liveStatus('LIVE · Kotak Neo WebSocket chart',true);
-  kotakWs.onmessage=ev=>{
-    try{
-      const d=JSON.parse(ev.data);
-      if(d.type==='chart_history')addKotakTicks(d.items||[]);
-      else if(d.type==='tick'){
-        addKotakTicks([...kotakChartTicks,{ts:d.raw_time||Date.now(),ltp:d.ltp}]);
-      }else if(d.type==='stream_status'){
-        liveStatus('LIVE · Kotak Neo WebSocket chart',true);
-      }else if(d.type==='error'){
-        if(d.message==='LOGIN_REQUIRED') {
-          sessionId='';localStorage.removeItem('sm_session');
-          updateKotakAuthButton();
-          kotakChartShowOverlay(true);
-        } else {
-          kotakChartShowOverlay(true,'Kotak chart error: '+d.message);
-        }
-      }
-    }catch{}
-  };
-  kotakWs.onclose=()=>{
-    if(sessionId){
-      kotakReconnectTimer=setTimeout(()=>openKotakChart(current),3000);
-    }
-  };
-  kotakWs.onerror=()=>{};
-}
-
-function resetLiveChart(){openKotakChart(current)}
-function protectChartWheel(){}
-function setKotakRange(range,btn){
-  kotakChartRange=range;
-  document.querySelectorAll('.kotak-range').forEach(x=>x.classList.remove('active'));
-  if(btn)btn.classList.add('active');
-  if(range!=='1D'){
-    kotakChartShowOverlay(true,'Kotak Neo SDK currently provides live ticks, not historical candles');
-    return;
-  }
-  kotakChartShowOverlay(false);
-  drawKotakChart();
-}
-
+function setTVRange(range,btn){tvRange=range;document.querySelectorAll('.periods button').forEach(x=>x.classList.remove('active'));if(btn)btn.classList.add('active');renderTradingViewChart(current,tvRange)}
 function startPricePolling(){clearInterval(pricePollTimer);pollLivePrice();pricePollTimer=setInterval(pollLivePrice,10000)}
 async function pollLivePrice(){if(!current)return;try{const d=await api('/api/live-price?symbol='+encodeURIComponent(current));if(d.ltp!=null){$('price').textContent='₹'+fmt(d.ltp);$('change').textContent=(d.change_pct!=null?pct(d.change_pct):'')+' · '+esc(d.source||'Live')}}catch(e){}}
 
 function connectLiveStream(sym){
-  if($('kotakChartSource'))$('kotakChartSource').textContent=sessionId?'Kotak Neo WebSocket · live ticks':'Login required for Kotak Neo chart';
-  if(sessionId){
-    kotakChartShowOverlay(false);
-    openKotakChart(sym);
-    liveStatus('LIVE · Kotak Neo WebSocket chart',true);
-  }else{
-    kotakChartDisconnect();
-    kotakChartTicks=[];
-    kotakChartShowOverlay(true);
-    drawKotakChart();
-    liveStatus('Login to Kotak Neo for live chart',false);
+  renderTradingViewChart(sym,tvRange);
+  if(!sessionId){
+    liveStatus('TradingView chart · public scanner live snapshot · login for Kotak Neo live feed',false);
+  } else {
+    liveStatus('LIVE · Kotak Neo API Polling + TradingView chart',true);
   }
   startPricePolling();
 }
@@ -931,29 +689,10 @@ async function loadNeoAccount(){
   }
 }
 
-renderWatch();loadNews();
-updateKotakAuthButton();
-window.addEventListener('resize',()=>drawKotakChart());
-
-async function restoreKotakSession(){
-  if(!sessionId){
-    drawKotakChart();
-    return;
-  }
-  try{
-    await api('/api/session');
-    updateKotakAuthButton();
-  }catch{
-    sessionId='';
-    localStorage.removeItem('sm_session');
-    updateKotakAuthButton();
-  }
-  drawKotakChart();
-}
-restoreKotakSession();
-
-loadMarketOverview();loadMarketPulse();resetLiveChart();protectChartWheel();analyze('TCS');setInterval(()=>loadNews(newsQuery),120000);setInterval(loadMarketOverview,10000);setInterval(pollLivePrice,10000);setInterval(loadMarketPulse,30000);setInterval(()=>{if(sessionId)evaluateAlerts(false)},30000);
+renderWatch();loadNews();loadMarketOverview();loadMarketPulse();resetLiveChart();protectChartWheel();analyze('TCS');setInterval(()=>loadNews(newsQuery),120000);setInterval(loadMarketOverview,10000);setInterval(pollLivePrice,10000);setInterval(loadMarketPulse,30000);setInterval(()=>{if(sessionId)evaluateAlerts(false)},30000);
 </script>
 
 </body></html>
+
+<script>updateKotakAuthButton();</script>
 
