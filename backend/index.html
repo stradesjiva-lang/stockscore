@@ -21,6 +21,17 @@ button,input,select{font:inherit}.app{min-height:100vh;display:flex}.sidebar{wid
 @media(max-width:1100px){.pulsegrid{grid-template-columns:1fr 1fr}.alertgrid{grid-template-columns:1fr 1fr}}
 @media(max-width:760px){.pulsegrid{grid-template-columns:1fr}.pulsecols{grid-template-columns:1fr}.alertgrid{grid-template-columns:1fr}}
 </style>
+
+<style>
+#nseWideMovers table th,#nseWideMovers table td{
+  padding:8px 7px;
+  border-bottom:1px solid rgba(127,127,127,.18);
+  text-align:left;
+}
+#nseWideMovers table th{opacity:.7;font-weight:600;}
+#nseWideMovers h3{margin:12px 0 8px;}
+</style>
+
 </head>
 <body>
 <div class="app">
@@ -328,4 +339,146 @@ async function loadNeoAccount(){
 
 renderWatch();loadNews();loadMarketOverview();loadMarketPulse();resetLiveChart();protectChartWheel();analyze('TCS');setInterval(()=>loadNews(newsQuery),120000);setInterval(loadMarketOverview,10000);setInterval(pollLivePrice,10000);setInterval(loadMarketPulse,30000);setInterval(()=>{if(sessionId)evaluateAlerts(false)},30000);
 </script>
+
+<!-- NSE-WIDE 1 MONTH MOVERS -->
+<section id="nseWideMovers" class="card" style="margin-top:18px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+    <div>
+      <h2 style="margin:0;">NSE-Wide 1 Month Movers</h2>
+      <div style="opacity:.72;font-size:13px;margin-top:4px;">
+        पूरे NSE primary equity universe से 1M return और positive/negative trading days
+      </div>
+    </div>
+    <button id="nseWideRefresh" type="button" style="padding:8px 14px;border-radius:8px;cursor:pointer;">
+      Refresh
+    </button>
+  </div>
+
+  <div id="nseWideStatus" style="margin:12px 0;font-size:13px;opacity:.75;">
+    Loading NSE-wide data...
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
+    <div>
+      <h3>🟢 Highest 1M Return</h3>
+      <div id="nseWideGainers" style="overflow:auto;"></div>
+    </div>
+    <div>
+      <h3>🔴 Lowest 1M Return</h3>
+      <div id="nseWideLosers" style="overflow:auto;"></div>
+    </div>
+    <div>
+      <h3>🟢 Most Positive Days</h3>
+      <div id="nseWidePositiveDays" style="overflow:auto;"></div>
+    </div>
+    <div>
+      <h3>🔴 Most Negative Days</h3>
+      <div id="nseWideNegativeDays" style="overflow:auto;"></div>
+    </div>
+  </div>
+</section>
+
+<script>
+(function () {
+  const esc = (v) => String(v ?? "")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;")
+    .replace(/'/g,"&#039;");
+
+  const fmt = (v, digits=2) => {
+    if (v === null || v === undefined || v === "" || Number.isNaN(Number(v))) return "—";
+    return Number(v).toFixed(digits);
+  };
+
+  function table(rows, mode) {
+    if (!Array.isArray(rows) || !rows.length) {
+      return '<div style="opacity:.65;padding:10px 0;">No data available.</div>';
+    }
+
+    let head = "";
+    if (mode === "return") {
+      head = "<tr><th>Stock</th><th>Price</th><th>1M %</th></tr>";
+    } else {
+      head = "<tr><th>Stock</th><th>Days</th><th>Ratio</th></tr>";
+    }
+
+    const body = rows.map(r => {
+      const symbol = esc(r.symbol || r.name || "—");
+      if (mode === "return") {
+        const ret = r.return_1m_pct ?? r["Perf.1M"] ?? r.change_pct;
+        return `<tr>
+          <td><b>${symbol}</b></td>
+          <td>${fmt(r.price)}</td>
+          <td>${fmt(ret)}%</td>
+        </tr>`;
+      }
+
+      const days = mode === "positive"
+        ? (r.positive_days_1m ?? r.green_days ?? r.days)
+        : (r.negative_days_1m ?? r.red_days ?? r.days);
+      const ratio = mode === "positive"
+        ? (r.green_ratio_1m ?? r.positive_ratio_1m ?? r.ratio)
+        : (r.red_ratio_1m ?? r.negative_ratio_1m ?? r.ratio);
+
+      return `<tr>
+        <td><b>${symbol}</b></td>
+        <td>${days ?? "—"}</td>
+        <td>${ratio == null ? "—" : fmt(ratio)}%</td>
+      </tr>`;
+    }).join("");
+
+    return `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>${head}</thead><tbody>${body}</tbody>
+    </table>`;
+  }
+
+  async function loadNseWideMovers() {
+    const status = document.getElementById("nseWideStatus");
+    const btn = document.getElementById("nseWideRefresh");
+    if (!status) return;
+
+    status.textContent = "Loading NSE-wide 1M data...";
+    if (btn) btn.disabled = true;
+
+    try {
+      const base = window.location.origin;
+      const response = await fetch(base + "/api/monthly-movers?limit=10", {
+        cache: "no-store"
+      });
+
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const data = await response.json();
+
+      const monthly = data.monthly || data;
+      const gainers = monthly.gainers_1m || data.gainers_1m || [];
+      const losers = monthly.losers_1m || data.losers_1m || [];
+      const positive = monthly.most_positive_days_1m || data.most_positive_days_1m || [];
+      const negative = monthly.most_negative_days_1m || data.most_negative_days_1m || [];
+
+      document.getElementById("nseWideGainers").innerHTML = table(gainers, "return");
+      document.getElementById("nseWideLosers").innerHTML = table(losers, "return");
+      document.getElementById("nseWidePositiveDays").innerHTML = table(positive, "positive");
+      document.getElementById("nseWideNegativeDays").innerHTML = table(negative, "negative");
+
+      status.textContent =
+        "Universe: " + (monthly.universe || data.universe || "NSE primary equity stocks") +
+        " • Period: 1 Month" +
+        (monthly.updated_at || data.updated_at ? " • Updated" : "");
+    } catch (err) {
+      status.textContent = "NSE-wide data load failed: " + err.message;
+      console.error("NSE-wide movers:", err);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    const btn = document.getElementById("nseWideRefresh");
+    if (btn) btn.addEventListener("click", loadNseWideMovers);
+    loadNseWideMovers();
+  });
+})();
+</script>
+
 </body></html>
+
