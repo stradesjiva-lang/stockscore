@@ -222,7 +222,7 @@ button,input,select{font:inherit}.app{min-height:100vh;display:flex}.sidebar{wid
     <button data-page="dashboard" onclick="page('dashboard',this)">Dashboard</button><button data-page="screener" onclick="page('screener',this)">Screener</button><button data-page="portfolio" onclick="page('portfolio',this)">Portfolio</button><button data-page="news" onclick="page('news',this)">Market News</button><button data-page="alerts" onclick="page('alerts',this)">Alerts</button><button id="kotakAuthBtn" onclick="handleKotakAuth()" style="border:1px solid #dbe2ea;background:#fff;border-radius:7px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer">Kotak Login</button><span>🔔</span><span>◐</span><span class="avatar" onclick="openLogin()" style="cursor:pointer">U</span>
   </div>
 </header>
-<div class="ticker"><span>∞ Unlimited Analyses</span><span>•</span><span>◉ No Limits</span><span>•</span><span>◉ Real-time Data</span><span>•</span><span>◉ 100-Point Stock Score</span><span>•</span><span>✓ All Features Unlocked</span></div><div id="marketTape" style="height:38px;background:#071a2f;color:#dce8f5;display:flex;align-items:center;justify-content:center;gap:28px;font-size:11px;overflow:auto"><span>Market data loading…</span></div>
+<div class="ticker"><span>∞ Unlimited Analyses</span><span>•</span><span>◉ No Limits</span><span>•</span><span>◉ Real-time Data</span><span>•</span><span>◉ 100-Point Stock Score</span><span>•</span><span>✓ All Features Unlocked</span></div><div id="marketTape" style="height:38px;background:#071a2f;color:#dce8f5;display:flex;align-items:center;justify-content:center;gap:28px;font-size:11px;overflow:auto"><span>Public market data · TradingView scanner</span></div>
 
 <section id="dashboard" class="page active content">
   <div class="dashcols">
@@ -540,7 +540,7 @@ function logout(){
   sessionId='';
   localStorage.removeItem('sm_session');
   updateKotakAuthButton();
-  liveStatus('Public TradingView data · login for Kotak Neo live feed',false);
+  liveStatus('TradingView public data · Kotak Neo live price runs separately',false);
   try{renderTradingViewChart(current,tvRange)}catch{}
 }).catch(()=>{});sessionId='';localStorage.removeItem('sm_session');liveStatus('Public TradingView data · login for Kotak Neo live feed',false)}
 function runAnalyze(){analyze($('globalSearch').value)}
@@ -581,7 +581,7 @@ function closeDetails(){$('detailsModal').style.display='none'}
 async function analyze(symbol){
   symbol=(symbol||'').trim().toUpperCase();if(!symbol)return;
   current=symbol;$('globalSearch').value=symbol;page('dashboard');
-  $('company').textContent='Loading…';$('symbol').textContent=symbol;$('logo').textContent=symbol.slice(0,3);$('score').innerHTML='—<small>/100</small>';liveStatus('Fetching market data…',false);
+  $('company').textContent='Loading…';$('symbol').textContent=symbol;$('logo').textContent=symbol.slice(0,3);$('score').innerHTML='—<small>/100</small>';liveStatus('Loading public TradingView data…',false);
   try{
     const d=await api('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company:symbol})});
     current=d.symbol||symbol;$('company').textContent=d.company||current;$('symbol').textContent=current;$('logo').textContent=current.slice(0,3);$('price').textContent='₹'+fmt(d.ltp);
@@ -689,7 +689,18 @@ async function loadNeoAccount(){
   }
 }
 
-renderWatch();loadNews();loadMarketOverview();loadMarketPulse();resetLiveChart();protectChartWheel();analyze('TCS');setInterval(()=>loadNews(newsQuery),120000);setInterval(loadMarketOverview,10000);setInterval(pollLivePrice,10000);setInterval(loadMarketPulse,30000);setInterval(()=>{if(sessionId)evaluateAlerts(false)},30000);
+renderWatch();
+resetLiveChart();
+protectChartWheel();
+loadNews();
+loadMarketOverview();
+loadMarketPulse();
+setTimeout(()=>analyze('TCS'),0);
+setInterval(()=>loadNews(newsQuery),120000);
+setInterval(loadMarketOverview,10000);
+setInterval(pollLivePrice,10000);
+setInterval(loadMarketPulse,30000);
+setInterval(()=>{if(sessionId)evaluateAlerts(false)},30000);
 </script>
 
 </body></html>
