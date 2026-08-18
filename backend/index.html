@@ -32,6 +32,89 @@ button,input,select{font:inherit}.app{min-height:100vh;display:flex}.sidebar{wid
 #nseWideMovers h3{margin:12px 0 8px;}
 </style>
 
+
+<style>
+/* NSE-wide panel: keep it inside the dashboard content and prevent clipping */
+.nse-wide-card{
+  width:100%;
+  box-sizing:border-box;
+  margin-top:14px;
+  padding:16px;
+  overflow:visible;
+  position:relative;
+  z-index:2;
+  clear:both;
+}
+.nse-wide-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  flex-wrap:wrap;
+}
+.nse-wide-head h2{margin:0;font-size:20px;}
+.nse-wide-sub{margin-top:5px;color:#64748b;font-size:12px;}
+.nse-wide-status{margin:12px 0;color:#64748b;font-size:12px;}
+.nse-wide-refresh{
+  border:1px solid #cbd5e1;
+  background:#fff;
+  color:#0f172a;
+  border-radius:8px;
+  padding:8px 14px;
+  cursor:pointer;
+  font-weight:700;
+}
+.nse-wide-refresh:hover{background:#f8fafc;}
+.nse-wide-refresh:disabled{opacity:.55;cursor:wait;}
+.nse-wide-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+  width:100%;
+}
+.nse-wide-box{
+  min-width:0;
+  border:1px solid #edf0f4;
+  border-radius:9px;
+  padding:10px;
+  background:var(--card,#fff);
+}
+.nse-wide-box h3{margin:2px 2px 9px;font-size:15px;}
+.positive-title{color:#047857;}
+.negative-title{color:#dc2626;}
+.nse-table-wrap{width:100%;overflow-x:auto;}
+.nse-wide-table{
+  width:100%;
+  min-width:320px;
+  border-collapse:collapse;
+  font-size:13px;
+}
+.nse-wide-table th,
+.nse-wide-table td{
+  padding:9px 8px;
+  border-bottom:1px solid #edf0f4;
+  text-align:left;
+  white-space:nowrap;
+}
+.nse-wide-table th{font-size:11px;color:#64748b;font-weight:700;}
+.nse-stock-row{cursor:pointer;transition:background .12s;}
+.nse-stock-row:hover{background:#f1f5f9;}
+.nse-stock-link{
+  color:#0f4c81;
+  font-weight:800;
+  text-decoration:underline;
+  text-decoration-color:#cbd5e1;
+  text-underline-offset:3px;
+}
+.nse-pos{color:#059669;}
+.nse-neg{color:#dc2626;}
+.nse-empty{padding:18px 6px;color:#94a3b8;font-size:13px;}
+@media (max-width:900px){
+  .nse-wide-grid{grid-template-columns:1fr;}
+  .nse-wide-card{padding:12px;}
+}
+</style>
+
 </head>
 <body>
 <div class="app">
@@ -116,6 +199,158 @@ button,input,select{font:inherit}.app{min-height:100vh;display:flex}.sidebar{wid
     <div class="feature"><div class="bigicon">▤</div><h3>Daily Market Report</h3><p>Get daily top picks, trends & insights.</p><button onclick="page('news');return false;">View Report</button></div>
   </div>
   <div class="disclaimer">Disclaimer: StockMeter is an analytical tool and not a financial advisor. All data is for informational purposes only. Please do your own research before investing.</div>
+
+<!-- NSE-WIDE 1 MONTH MOVERS -->
+<div id="nseWideMovers" class="card nse-wide-card">
+  <div class="nse-wide-head">
+    <div>
+      <h2>NSE-Wide 1 Month Movers</h2>
+      <div class="nse-wide-sub">NSE primary equity universe • 1 Month return • positive/negative trading days</div>
+    </div>
+    <button id="nseWideRefresh" type="button" class="nse-wide-refresh">↻ Refresh</button>
+  </div>
+
+  <div id="nseWideStatus" class="nse-wide-status">Loading NSE-wide data...</div>
+
+  <div class="nse-wide-grid">
+    <div class="nse-wide-box">
+      <h3 class="positive-title">🟢 Highest 1M Return</h3>
+      <div id="nseWideGainers"></div>
+    </div>
+    <div class="nse-wide-box">
+      <h3 class="negative-title">🔴 Lowest 1M Return</h3>
+      <div id="nseWideLosers"></div>
+    </div>
+    <div class="nse-wide-box">
+      <h3 class="positive-title">🟢 Most Positive Days</h3>
+      <div id="nseWidePositiveDays"></div>
+    </div>
+    <div class="nse-wide-box">
+      <h3 class="negative-title">🔴 Most Negative Days</h3>
+      <div id="nseWideNegativeDays"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const escNse = (v) => String(v ?? "")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;")
+    .replace(/'/g,"&#039;");
+
+  const fmtNse = (v, digits=2) => {
+    if (v === null || v === undefined || v === "" || Number.isNaN(Number(v))) return "—";
+    return Number(v).toFixed(digits);
+  };
+
+  // Clicking any NSE-wide stock opens the existing StockMeter analysis.
+  window.openNseStock = function(symbol) {
+    symbol = String(symbol || "").trim().toUpperCase();
+    if (!symbol) return;
+    if (typeof analyze === "function") {
+      analyze(symbol);
+      const dashboard = document.getElementById("dashboard");
+      if (dashboard) {
+        setTimeout(() => dashboard.scrollIntoView({behavior:"smooth", block:"start"}), 100);
+      }
+    } else {
+      const input = document.getElementById("globalSearch");
+      if (input) input.value = symbol;
+    }
+  };
+
+  function makeRows(rows, mode) {
+    if (!Array.isArray(rows) || !rows.length) {
+      return '<div class="nse-empty">No data available.</div>';
+    }
+
+    let head = "";
+    if (mode === "return") {
+      head = '<tr><th>Stock</th><th>Price</th><th>1M Return</th></tr>';
+    } else {
+      head = '<tr><th>Stock</th><th>Days</th><th>Ratio</th></tr>';
+    }
+
+    const body = rows.map(r => {
+      const symbolRaw = r.symbol || r.name || "";
+      const symbol = escNse(symbolRaw);
+      if (!symbolRaw) return "";
+
+      if (mode === "return") {
+        const ret = r.return_1m_pct ?? r["Perf.1M"] ?? r.change_pct;
+        const cls = Number(ret) >= 0 ? "nse-pos" : "nse-neg";
+        return `<tr class="nse-stock-row" title="Analyze ${symbol}" onclick="openNseStock('${escNse(symbolRaw)}')">
+          <td><span class="nse-stock-link">${symbol}</span></td>
+          <td>₹${fmtNse(r.price)}</td>
+          <td class="${cls}"><b>${fmtNse(ret)}%</b></td>
+        </tr>`;
+      }
+
+      const days = mode === "positive"
+        ? (r.positive_days_1m ?? r.green_days ?? r.days)
+        : (r.negative_days_1m ?? r.red_days ?? r.days);
+      const ratio = mode === "positive"
+        ? (r.green_ratio_1m ?? r.positive_ratio_1m ?? r.ratio)
+        : (r.red_ratio_1m ?? r.negative_ratio_1m ?? r.ratio);
+
+      return `<tr class="nse-stock-row" title="Analyze ${symbol}" onclick="openNseStock('${escNse(symbolRaw)}')">
+        <td><span class="nse-stock-link">${symbol}</span></td>
+        <td>${days ?? "—"}</td>
+        <td>${ratio == null ? "—" : fmtNse(ratio) + "%"}</td>
+      </tr>`;
+    }).join("");
+
+    return `<div class="nse-table-wrap"><table class="nse-wide-table">
+      <thead>${head}</thead><tbody>${body}</tbody>
+    </table></div>`;
+  }
+
+  async function loadNseWideMovers() {
+    const status = document.getElementById("nseWideStatus");
+    const btn = document.getElementById("nseWideRefresh");
+    if (!status) return;
+
+    status.textContent = "Loading NSE-wide 1M data...";
+    if (btn) btn.disabled = true;
+
+    try {
+      const response = await fetch("/api/monthly-movers?limit=10", {cache:"no-store"});
+      if (!response.ok) throw new Error("HTTP " + response.status);
+
+      const data = await response.json();
+      const monthly = data.monthly || data;
+
+      const gainers = monthly.gainers_1m || data.gainers_1m || [];
+      const losers = monthly.losers_1m || data.losers_1m || [];
+      const positive = monthly.most_positive_days_1m || data.most_positive_days_1m || [];
+      const negative = monthly.most_negative_days_1m || data.most_negative_days_1m || [];
+
+      document.getElementById("nseWideGainers").innerHTML = makeRows(gainers, "return");
+      document.getElementById("nseWideLosers").innerHTML = makeRows(losers, "return");
+      document.getElementById("nseWidePositiveDays").innerHTML = makeRows(positive, "positive");
+      document.getElementById("nseWideNegativeDays").innerHTML = makeRows(negative, "negative");
+
+      status.textContent =
+        "Universe: " + (monthly.universe || data.universe || "NSE primary equity stocks") +
+        " • Period: 1 Month" +
+        ((monthly.updated_at || data.updated_at) ? " • Updated" : "");
+    } catch (err) {
+      status.textContent = "NSE-wide data load failed: " + err.message;
+      console.error(err);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", function() {
+    const btn = document.getElementById("nseWideRefresh");
+    if (btn) btn.addEventListener("click", loadNseWideMovers);
+    loadNseWideMovers();
+  });
+})();
+</script>
+
 </section>
 
 <section id="analyze" class="page content"><div class="card toolcard"><h2>Analyze Stock</h2><div class="toolinput"><input id="anInput" value="TCS" placeholder="TCS, RELIANCE, INFY"><button onclick="analyzeFrom('anInput')">Analyze</button></div></div></section>
@@ -338,146 +573,6 @@ async function loadNeoAccount(){
 }
 
 renderWatch();loadNews();loadMarketOverview();loadMarketPulse();resetLiveChart();protectChartWheel();analyze('TCS');setInterval(()=>loadNews(newsQuery),120000);setInterval(loadMarketOverview,10000);setInterval(pollLivePrice,10000);setInterval(loadMarketPulse,30000);setInterval(()=>{if(sessionId)evaluateAlerts(false)},30000);
-</script>
-
-<!-- NSE-WIDE 1 MONTH MOVERS -->
-<section id="nseWideMovers" class="card" style="margin-top:18px;">
-  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div>
-      <h2 style="margin:0;">NSE-Wide 1 Month Movers</h2>
-      <div style="opacity:.72;font-size:13px;margin-top:4px;">
-        पूरे NSE primary equity universe से 1M return और positive/negative trading days
-      </div>
-    </div>
-    <button id="nseWideRefresh" type="button" style="padding:8px 14px;border-radius:8px;cursor:pointer;">
-      Refresh
-    </button>
-  </div>
-
-  <div id="nseWideStatus" style="margin:12px 0;font-size:13px;opacity:.75;">
-    Loading NSE-wide data...
-  </div>
-
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
-    <div>
-      <h3>🟢 Highest 1M Return</h3>
-      <div id="nseWideGainers" style="overflow:auto;"></div>
-    </div>
-    <div>
-      <h3>🔴 Lowest 1M Return</h3>
-      <div id="nseWideLosers" style="overflow:auto;"></div>
-    </div>
-    <div>
-      <h3>🟢 Most Positive Days</h3>
-      <div id="nseWidePositiveDays" style="overflow:auto;"></div>
-    </div>
-    <div>
-      <h3>🔴 Most Negative Days</h3>
-      <div id="nseWideNegativeDays" style="overflow:auto;"></div>
-    </div>
-  </div>
-</section>
-
-<script>
-(function () {
-  const esc = (v) => String(v ?? "")
-    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;").replace(/"/g,"&quot;")
-    .replace(/'/g,"&#039;");
-
-  const fmt = (v, digits=2) => {
-    if (v === null || v === undefined || v === "" || Number.isNaN(Number(v))) return "—";
-    return Number(v).toFixed(digits);
-  };
-
-  function table(rows, mode) {
-    if (!Array.isArray(rows) || !rows.length) {
-      return '<div style="opacity:.65;padding:10px 0;">No data available.</div>';
-    }
-
-    let head = "";
-    if (mode === "return") {
-      head = "<tr><th>Stock</th><th>Price</th><th>1M %</th></tr>";
-    } else {
-      head = "<tr><th>Stock</th><th>Days</th><th>Ratio</th></tr>";
-    }
-
-    const body = rows.map(r => {
-      const symbol = esc(r.symbol || r.name || "—");
-      if (mode === "return") {
-        const ret = r.return_1m_pct ?? r["Perf.1M"] ?? r.change_pct;
-        return `<tr>
-          <td><b>${symbol}</b></td>
-          <td>${fmt(r.price)}</td>
-          <td>${fmt(ret)}%</td>
-        </tr>`;
-      }
-
-      const days = mode === "positive"
-        ? (r.positive_days_1m ?? r.green_days ?? r.days)
-        : (r.negative_days_1m ?? r.red_days ?? r.days);
-      const ratio = mode === "positive"
-        ? (r.green_ratio_1m ?? r.positive_ratio_1m ?? r.ratio)
-        : (r.red_ratio_1m ?? r.negative_ratio_1m ?? r.ratio);
-
-      return `<tr>
-        <td><b>${symbol}</b></td>
-        <td>${days ?? "—"}</td>
-        <td>${ratio == null ? "—" : fmt(ratio)}%</td>
-      </tr>`;
-    }).join("");
-
-    return `<table style="width:100%;border-collapse:collapse;font-size:13px;">
-      <thead>${head}</thead><tbody>${body}</tbody>
-    </table>`;
-  }
-
-  async function loadNseWideMovers() {
-    const status = document.getElementById("nseWideStatus");
-    const btn = document.getElementById("nseWideRefresh");
-    if (!status) return;
-
-    status.textContent = "Loading NSE-wide 1M data...";
-    if (btn) btn.disabled = true;
-
-    try {
-      const base = window.location.origin;
-      const response = await fetch(base + "/api/monthly-movers?limit=10", {
-        cache: "no-store"
-      });
-
-      if (!response.ok) throw new Error("HTTP " + response.status);
-      const data = await response.json();
-
-      const monthly = data.monthly || data;
-      const gainers = monthly.gainers_1m || data.gainers_1m || [];
-      const losers = monthly.losers_1m || data.losers_1m || [];
-      const positive = monthly.most_positive_days_1m || data.most_positive_days_1m || [];
-      const negative = monthly.most_negative_days_1m || data.most_negative_days_1m || [];
-
-      document.getElementById("nseWideGainers").innerHTML = table(gainers, "return");
-      document.getElementById("nseWideLosers").innerHTML = table(losers, "return");
-      document.getElementById("nseWidePositiveDays").innerHTML = table(positive, "positive");
-      document.getElementById("nseWideNegativeDays").innerHTML = table(negative, "negative");
-
-      status.textContent =
-        "Universe: " + (monthly.universe || data.universe || "NSE primary equity stocks") +
-        " • Period: 1 Month" +
-        (monthly.updated_at || data.updated_at ? " • Updated" : "");
-    } catch (err) {
-      status.textContent = "NSE-wide data load failed: " + err.message;
-      console.error("NSE-wide movers:", err);
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  }
-
-  document.addEventListener("DOMContentLoaded", function () {
-    const btn = document.getElementById("nseWideRefresh");
-    if (btn) btn.addEventListener("click", loadNseWideMovers);
-    loadNseWideMovers();
-  });
-})();
 </script>
 
 </body></html>
