@@ -14,6 +14,7 @@ import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote_plus
+from collections import deque
 from typing import List, Optional, Dict, Any
 
 from dotenv import load_dotenv
@@ -609,6 +610,7 @@ def login_neo(totp):
             "created_at": time.time(),
             "last_used": time.time(),
             "ticks": {},
+            "tick_history": {},
             "token_map": {},
             "subscribed": set()
         }
@@ -624,6 +626,11 @@ def login_neo(totp):
                 if not tick.get("symbol"):
                     tick["symbol"] = sess.get("token_map", {}).get(token, "")
                 sess.get("ticks", {})[token] = tick
+                hist = sess.setdefault("tick_history", {}).setdefault(token, deque(maxlen=4000))
+                hist.append({
+                    "ts": tick.get("raw_time") or datetime.now(timezone.utc).isoformat(),
+                    "ltp": float(tick["ltp"])
+                })
 
         def _neo_on_error(message):
             sessions.get(session_id, {})["last_ws_error"] = str(message)
@@ -662,9 +669,13 @@ def get_session(request: Request) -> Dict[str, Any]:
 @app.post("/api/logout")
 def api_logout(request: Request):
     session_id = request.headers.get("X-StockMeter-Session", "").strip()
-    if session_id:
-        sessions.pop(session_id, None)
-    return {"ok": True}
+    session = sessions.pop(session_id, None) if session_id else None
+    if session:
+        try:
+            session["neo"].logout()
+        except Exception:
+            pass
+    return {"ok": True, "logged_out": True}
 
 @app.get("/api/session")
 def api_session(request: Request):
@@ -1218,6 +1229,20 @@ async def websocket_live(websocket: WebSocket):
             "source": "Kotak Neo WebSocket"
         })
 
+        # Recent ticks collected by this login session. These are Kotak Neo
+        # live-feed ticks; the browser converts them into 1-minute candles.
+        try:
+            recent = list(session.get("tick_history", {}).get(token, []))[-1500:]
+            if recent:
+                await websocket.send_json({
+                    "type": "chart_history",
+                    "symbol": symbol,
+                    "items": recent,
+                    "source": "Kotak Neo WebSocket"
+                })
+        except Exception:
+            pass
+
         # Immediate quote snapshot.
         try:
             snapshot = neo_client.quotes(
@@ -1263,6 +1288,28 @@ async def websocket_live(websocket: WebSocket):
             await websocket.send_json({"type": "error", "message": str(e)})
         except Exception:
             pass
+
+
+@app.get("/api/kotak-chart")
+def api_kotak_chart(symbol: str, request: Request, limit: int = 1500):
+    """Return recent current-session Kotak Neo ticks for the live chart."""
+    session = get_session(request)
+    symbol = symbol.strip().upper()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="Symbol is required")
+
+    stock = find_stock(symbol, session["neo"])
+    if not stock:
+        raise HTTPException(status_code=404, detail=f"Stock '{symbol}' not found.")
+
+    token = clean_token(stock.get("pSymbol"))
+    items = list(session.get("tick_history", {}).get(token, []))[-max(100, min(int(limit), 2000)):]
+    return {
+        "symbol": symbol,
+        "items": items,
+        "source": "Kotak Neo WebSocket",
+        "note": "Current-session live ticks only."
+    }
 
 @app.get("/health")
 def health():
