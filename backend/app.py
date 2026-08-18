@@ -6,9 +6,13 @@ import asyncio
 from pathlib import Path
 import json
 import re
+import io
+import csv
+import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from urllib.parse import quote_plus
 from typing import List, Optional, Dict, Any
 
@@ -276,41 +280,214 @@ def _nifty50_fallback_pulse():
         out.append({"symbol":sym,"price":num(x.get("close")),"change_pct":num(x.get("change")),"change_abs":num(x.get("change_abs")),"volume":num(x.get("volume")),"source":"TradingView"})
     return out
 
+def _parse_nse_bhavcopy_bytes(content: bytes):
+    """Parse one NSE CM UDiFF bhavcopy and return (symbol, close, prev_close) rows."""
+    rows = []
+    with zipfile.ZipFile(io.BytesIO(content)) as zf:
+        names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
+        if not names:
+            return rows
+        raw = zf.read(names[0])
+
+    text = raw.decode("utf-8-sig", errors="replace")
+    reader = csv.DictReader(io.StringIO(text))
+
+    for r in reader:
+        # UDiFF names + older/common fallbacks.
+        sym = str(
+            r.get("TckrSymb") or r.get("SYMBOL") or r.get("Symbol") or ""
+        ).strip().upper()
+        series = str(
+            r.get("SctySrs") or r.get("SERIES") or r.get("Series") or ""
+        ).strip().upper()
+
+        # Keep normal NSE cash equities. Exclude ETFs/debt/other instruments.
+        if not sym or series not in {"EQ", "BE"}:
+            continue
+
+        def f(*keys):
+            for k in keys:
+                v = r.get(k)
+                if v not in (None, ""):
+                    try:
+                        x = float(str(v).replace(",", ""))
+                        if math.isfinite(x):
+                            return x
+                    except Exception:
+                        pass
+            return None
+
+        close = f("ClsPric", "CLOSE", "Close")
+        prev = f("PrvsClsgPric", "PREV_CLOSE", "Prev Close", "Previous Close")
+        if close is not None and prev is not None and prev > 0:
+            rows.append((sym, close, prev))
+    return rows
+
+
+def _download_nse_bhavcopy(dt):
+    url = (
+        "https://nsearchives.nseindia.com/content/cm/"
+        f"BhavCopy_NSE_CM_0_0_0_{dt:%Y%m%d}_F_0000.csv.zip"
+    )
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 Chrome/131 Safari/537.36",
+        "Accept": "application/zip,application/octet-stream,*/*",
+        "Referer": "https://www.nseindia.com/",
+    }
+    try:
+        r = requests.get(url, headers=headers, timeout=12)
+        if r.status_code != 200 or len(r.content) < 1000:
+            return dt, []
+        return dt, _parse_nse_bhavcopy_bytes(r.content)
+    except Exception:
+        return dt, []
+
+
+_monthly_days_cache = {}
+_monthly_days_cache_ttl = 6 * 60 * 60
+
+
+def get_monthly_day_counts(limit=10):
+    """
+    Calculate the number of green/red trading days for every NSE cash-equity
+    symbol using NSE's official daily CM UDiFF bhavcopy files.
+    """
+    key = f"monthly-day-counts:{limit}"
+    cached = _monthly_days_cache.get(key)
+    if cached and time.time() - cached["time"] < _monthly_days_cache_ttl:
+        return cached["data"]
+
+    # Collect the most recent ~22 available trading-day bhavcopies.
+    dates = []
+    d = datetime.now(timezone.utc).date()
+    for _ in range(45):
+        if d.weekday() < 5:
+            dates.append(d)
+        d -= timedelta(days=1)
+
+    # Download in parallel; holidays/non-trading days simply return no rows.
+    results = []
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futures = [ex.submit(_download_nse_bhavcopy, dt) for dt in dates]
+        for fut in as_completed(futures):
+            dt, rows = fut.result()
+            if rows:
+                results.append((dt, rows))
+
+    results.sort(key=lambda x: x[0], reverse=True)
+    results = results[:22]
+
+    stats = {}
+    for dt, rows in results:
+        for sym, close, prev in rows:
+            s = stats.setdefault(sym, {"positive": 0, "negative": 0, "flat": 0, "days": 0})
+            s["days"] += 1
+            if close > prev:
+                s["positive"] += 1
+            elif close < prev:
+                s["negative"] += 1
+            else:
+                s["flat"] += 1
+
+    positive = []
+    negative = []
+    for sym, s in stats.items():
+        if s["days"] < 8:
+            continue
+        green_ratio = s["positive"] / s["days"] * 100
+        red_ratio = s["negative"] / s["days"] * 100
+
+        positive.append({
+            "symbol": sym,
+            "positive_days_1m": s["positive"],
+            "negative_days_1m": s["negative"],
+            "flat_days_1m": s["flat"],
+            "trading_days_1m": s["days"],
+            "green_ratio_1m": round(green_ratio, 2),
+            "red_ratio_1m": round(red_ratio, 2),
+            "source": "NSE official CM UDiFF bhavcopy",
+        })
+        negative.append({
+            "symbol": sym,
+            "positive_days_1m": s["positive"],
+            "negative_days_1m": s["negative"],
+            "flat_days_1m": s["flat"],
+            "trading_days_1m": s["days"],
+            "green_ratio_1m": round(green_ratio, 2),
+            "red_ratio_1m": round(red_ratio, 2),
+            "source": "NSE official CM UDiFF bhavcopy",
+        })
+
+    positive.sort(key=lambda x: (x["positive_days_1m"], x["green_ratio_1m"]), reverse=True)
+    negative.sort(key=lambda x: (x["negative_days_1m"], x["red_ratio_1m"]), reverse=True)
+
+    data = {
+        "most_positive_days_1m": positive[:max(limit, 25)],
+        "most_negative_days_1m": negative[:max(limit, 25)],
+        "trading_days_used": len(results),
+        "source": "NSE official CM UDiFF bhavcopy",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _monthly_days_cache[key] = {"time": time.time(), "data": data}
+    return data
+
+
 def get_monthly_movers(limit=10):
-    """Top and bottom 1-month performers across NSE primary equities."""
-    limit=max(5,min(int(limit),25))
-    key=f"monthly-movers:{limit}"
-    cached=_cached(key)
+    """NSE-wide top/bottom 1M return plus green/red trading-day rankings."""
+    limit = max(5, min(int(limit), 25))
+    key = f"monthly-movers:{limit}"
+    cached = _cached(key)
     if cached is not None:
         return cached
 
-    cols=["name","description","close","change","change_abs","volume","market_cap_basic","Perf.1M"]
-    try:
-        top_rows=_tv_scan_all_nse(cols,"Perf.1M","desc",max(limit,25))
-        bottom_rows=_tv_scan_all_nse(cols,"Perf.1M","asc",max(limit,25))
-        gainers=_tv_rows_to_movers(top_rows)[:limit]
-        losers=_tv_rows_to_movers(bottom_rows)[:limit]
-        gainers=[x for x in gainers if x.get("return_1m_pct") is not None]
-        losers=[x for x in losers if x.get("return_1m_pct") is not None]
+    cols = ["name", "description", "close", "change", "change_abs",
+            "volume", "market_cap_basic", "Perf.1M"]
 
-        return _put_cache(key,{
-            "gainers_1m":gainers,
-            "losers_1m":losers,
-            "universe":"NSE primary equity stocks",
-            "period":"1M",
-            "source":"TradingView NSE-wide scanner",
-            "updated_at":datetime.now(timezone.utc).isoformat()
-        })
+    try:
+        top_rows = _tv_scan_all_nse(cols, "Perf.1M", "desc", max(limit, 25))
+        bottom_rows = _tv_scan_all_nse(cols, "Perf.1M", "asc", max(limit, 25))
+        gainers = _tv_rows_to_movers(top_rows)[:limit]
+        losers = _tv_rows_to_movers(bottom_rows)[:limit]
+        gainers = [x for x in gainers if x.get("return_1m_pct") is not None]
+        losers = [x for x in losers if x.get("return_1m_pct") is not None]
+        source = "TradingView NSE-wide scanner"
+        tv_error = None
     except Exception as e:
-        return _put_cache(key,{
-            "gainers_1m":[],
-            "losers_1m":[],
-            "universe":"NSE primary equity stocks",
-            "period":"1M",
-            "source":"unavailable",
-            "error":str(e),
-            "updated_at":datetime.now(timezone.utc).isoformat()
-        })
+        gainers, losers = [], []
+        source = "unavailable"
+        tv_error = str(e)
+
+    try:
+        day_counts = get_monthly_day_counts(limit)
+    except Exception as e:
+        day_counts = {
+            "most_positive_days_1m": [],
+            "most_negative_days_1m": [],
+            "trading_days_used": 0,
+            "source": "unavailable",
+            "error": str(e),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    out = {
+        "gainers_1m": gainers,
+        "losers_1m": losers,
+        "most_positive_days_1m": day_counts.get("most_positive_days_1m", [])[:limit],
+        "most_negative_days_1m": day_counts.get("most_negative_days_1m", [])[:limit],
+        "universe": "NSE primary cash-equity stocks",
+        "period": "1M",
+        "trading_days_used": day_counts.get("trading_days_used", 0),
+        "source": source,
+        "day_count_source": day_counts.get("source"),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if tv_error:
+        out["return_error"] = tv_error
+    if day_counts.get("error"):
+        out["day_count_error"] = day_counts["error"]
+
+    return _put_cache(key, out)
 
 def get_top_movers(limit=10):
     key=f"movers:{limit}"; cached=_cached(key)
