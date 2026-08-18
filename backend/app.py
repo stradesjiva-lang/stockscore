@@ -154,18 +154,14 @@ def fetch_tradingview_data(symbol):
         "columns": [
             "close", "change", "change_abs", "volume",
             "price_earnings_ttm", "price_book_fq", "price_book_ratio",
-            "peg_ratio", "price_earnings_growth_ttm",
-            "return_on_equity_fq", "return_on_equity",
-            "debt_to_equity", "debt_to_equity_fq",
-            "total_revenue_yoy_growth_ttm", "total_revenue_yoy_growth",
-            "revenue_growth_yoy",
-            "earnings_per_share_basic_ttm",
-            "earnings_growth", "earnings_per_share_diluted_yoy_growth_ttm",
+            "return_on_equity", "debt_to_equity_fq", "debt_to_equity",
+            "total_revenue_yoy_growth", "revenue_growth_yoy",
+            "earnings_per_share_basic_ttm", "earnings_growth",
             "RSI", "SMA20", "SMA50", "SMA200",
-            "beta_1_year", "current_ratio", "current_ratio_fq",
+            "beta_1_year", "current_ratio_fq", "current_ratio",
             "market_cap_basic", "Perf.1M", "Perf.3M", "Perf.Y",
             "price_52_week_high", "price_52_week_low", "High.52", "Low.52",
-            "free_cash_flow_margin_ttm", "free_cash_flow_margin"
+            "free_cash_flow_margin_ttm"
         ]
     }
     
@@ -784,252 +780,165 @@ def find_stock(symbol, neo_client):
 # INTELLIGENT 100-POINT SCORING ENGINE
 # =========================================================
 
-def _first_num(data, *keys):
-    """Return the first numeric value available among TradingView aliases."""
-    for key in keys:
-        value = num(data.get(key))
-        if value is not None:
-            return value
-    return None
-
-
 def analyze_fundamentals(tv_data):
-    positives, warnings, pts, found = [], [], 0, 0
+    positives, warnings, pts, data_points_found = [], [], 0, 0
+    total_metrics = 4
 
-    pe = _first_num(tv_data, "price_earnings_ttm")
-    roe = _first_num(tv_data, "return_on_equity_fq", "return_on_equity")
-    growth = _first_num(
-        tv_data,
-        "total_revenue_yoy_growth_ttm",
-        "total_revenue_yoy_growth",
-        "revenue_growth_yoy"
-    )
-    debt = _first_num(tv_data, "debt_to_equity", "debt_to_equity_fq")
+    pe = num(tv_data.get("price_earnings_ttm"))
+    roe_pct = num(tv_data.get("return_on_equity"))
+    rg_pct = num(tv_data.get("total_revenue_yoy_growth")) or num(tv_data.get("revenue_growth_yoy"))
+    de = num(tv_data.get("debt_to_equity_fq")) or num(tv_data.get("debt_to_equity"))
 
     if pe is not None and pe > 0:
-        found += 1
+        data_points_found += 1
         if pe <= 15: pts += 10; positives.append(f"Very attractive PE ratio ({pe:.1f})")
         elif pe <= 20: pts += 8; positives.append(f"Attractive PE ratio ({pe:.1f})")
         elif pe <= 30: pts += 6; positives.append(f"Reasonable PE ratio ({pe:.1f})")
         elif pe <= 40: pts += 3; warnings.append(f"High PE valuation ({pe:.1f})")
         else: warnings.append(f"Very high PE valuation ({pe:.1f})")
 
-    if growth is not None:
-        found += 1
-        if growth >= 20: pts += 10; positives.append(f"Excellent Revenue Growth ({growth:+.1f}%)")
-        elif growth >= 12: pts += 8; positives.append(f"Strong Revenue Growth ({growth:+.1f}%)")
-        elif growth >= 5: pts += 5
-        elif growth >= 0: pts += 2; warnings.append(f"Low Revenue Growth ({growth:+.1f}%)")
-        else: warnings.append(f"Declining Revenue ({growth:.1f}%)")
+    if rg_pct is not None:
+        data_points_found += 1
+        if rg_pct >= 20: pts += 10; positives.append(f"Excellent Revenue Growth (+{rg_pct:.1f}%)")
+        elif rg_pct >= 12: pts += 8; positives.append(f"Strong Revenue Growth (+{rg_pct:.1f}%)")
+        elif rg_pct >= 5: pts += 5
+        elif rg_pct >= 0: pts += 2; warnings.append(f"Low Revenue Growth (+{rg_pct:.1f}%)")
+        else: warnings.append(f"Declining Revenue ({rg_pct:.1f}%)")
 
-    if roe is not None:
-        found += 1
-        if roe >= 25: pts += 10; positives.append(f"Excellent ROE ({roe:.1f}%)")
-        elif roe >= 18: pts += 8; positives.append(f"Strong ROE ({roe:.1f}%)")
-        elif roe >= 12: pts += 5
-        elif roe >= 8: pts += 2; warnings.append(f"Low ROE ({roe:.1f}%)")
-        else: warnings.append(f"Very low ROE ({roe:.1f}%)")
+    if roe_pct is not None:
+        data_points_found += 1
+        if roe_pct >= 25: pts += 10; positives.append(f"Excellent ROE ({roe_pct:.1f}%)")
+        elif roe_pct >= 18: pts += 8; positives.append(f"Strong ROE ({roe_pct:.1f}%)")
+        elif roe_pct >= 12: pts += 5
+        elif roe_pct >= 8: pts += 2; warnings.append(f"Low ROE ({roe_pct:.1f}%)")
+        else: warnings.append(f"Very low ROE ({roe_pct:.1f}%)")
 
-    if debt is not None and debt >= 0:
-        found += 1
-        if debt <= 0.30: pts += 10; positives.append(f"Very low Debt/Equity ({debt:.2f})")
-        elif debt <= 0.60: pts += 8; positives.append(f"Low Debt/Equity ({debt:.2f})")
-        elif debt <= 1.00: pts += 5
-        elif debt <= 1.50: pts += 2; warnings.append(f"Elevated Debt/Equity ({debt:.2f})")
-        else: warnings.append(f"High Debt/Equity ({debt:.2f})")
+    if de is not None and de >= 0:
+        data_points_found += 1
+        if de <= 0.30: pts += 10; positives.append(f"Very low Debt/Equity ({de:.2f})")
+        elif de <= 0.60: pts += 8; positives.append(f"Low Debt/Equity ({de:.2f})")
+        elif de <= 1.00: pts += 5
+        elif de <= 1.50: pts += 2; warnings.append(f"Elevated Debt/Equity ({de:.2f})")
+        else: warnings.append(f"High Debt/Equity ({de:.2f})")
 
     return {
-        "score": min(pts, 40), "max": 40, "confidence": found / 4,
+        "score": min(pts, 40), "max": 40, "confidence": data_points_found / total_metrics,
         "positives": positives, "warnings": warnings,
-        "data": {
-            "pe": pe,
-            "roe_pct": round(roe, 2) if roe is not None else None,
-            "revenue_growth_pct": round(growth, 2) if growth is not None else None,
-            "debt_to_equity": round(debt, 3) if debt is not None else None
-        }
+        "data": {"pe": pe, "roe_pct": round(roe_pct, 2) if roe_pct is not None else None, 
+                 "revenue_growth_pct": round(rg_pct, 2) if rg_pct is not None else None, "debt_to_equity": de}
     }
-
 
 def analyze_technicals(tv_data):
     positives, warnings, pts, found = [], [], 0, 0
-    last = _first_num(tv_data, "close")
-    sma50 = _first_num(tv_data, "SMA50")
-    sma200 = _first_num(tv_data, "SMA200")
-    rsi = _first_num(tv_data, "RSI")
-    m1 = _first_num(tv_data, "Perf.1M")
-    m3 = _first_num(tv_data, "Perf.3M")
-    hi52 = _first_num(tv_data, "price_52_week_high", "High.52")
-    lo52 = _first_num(tv_data, "price_52_week_low", "Low.52")
+    total_metrics = 4
 
-    if last is None:
-        return {
-            "score": 0, "max": 25, "confidence": 0,
-            "positives": [], "warnings": ["Live price unavailable."], "data": {}
-        }
+    last_price = num(tv_data.get("close"))
+    sma50 = num(tv_data.get("SMA50"))
+    sma200 = num(tv_data.get("SMA200"))
+    rv = num(tv_data.get("RSI"))
+    m20 = num(tv_data.get("Perf.1M"))
+    m60 = num(tv_data.get("Perf.3M"))
+    high_52 = num(tv_data.get("price_52_week_high")) or num(tv_data.get("High.52"))
+    low_52 = num(tv_data.get("price_52_week_low")) or num(tv_data.get("Low.52"))
+
+    if not last_price:
+        return {"score": 0, "max": 25, "confidence": 0.0, "positives": [], "warnings": ["Live price unavailable."], "data": {}}
 
     if sma50 is not None and sma200 is not None:
         found += 1
-        if last > sma50 > sma200:
-            pts += 8; positives.append("Strong Bullish Trend")
-        elif last > sma50 and last > sma200:
-            pts += 6; positives.append("Bullish Trend")
-        elif last > sma50:
-            pts += 4
-        elif last > sma200:
-            pts += 2
-        else:
-            warnings.append("Price is below both SMA50 and SMA200.")
+        if last_price > sma50 > sma200: pts += 8; positives.append("Strong Bullish Trend")
+        elif last_price > sma50 and last_price > sma200: pts += 6; positives.append("Bullish Trend")
+        elif last_price > sma50: pts += 4
+        elif last_price > sma200: pts += 2
+        else: warnings.append("Price is below both SMA50 and SMA200.")
 
-    if rsi is not None:
+    if rv is not None:
         found += 1
-        if 55 <= rsi <= 68:
-            pts += 5; positives.append(f"Healthy RSI ({rsi:.1f})")
-        elif 50 <= rsi < 55:
-            pts += 3
-        elif 68 < rsi <= 75:
-            pts += 2; warnings.append(f"RSI elevated ({rsi:.1f})")
-        elif rsi > 75:
-            warnings.append(f"RSI Overbought ({rsi:.1f})")
-        elif 40 <= rsi < 50:
-            pts += 1
-        else:
-            warnings.append(f"Weak RSI ({rsi:.1f})")
+        if 55 <= rv <= 68: pts += 5; positives.append(f"Healthy RSI ({rv:.1f})")
+        elif 50 <= rv < 55: pts += 3
+        elif 68 < rv <= 75: pts += 2; warnings.append(f"RSI elevated ({rv:.1f})")
+        elif rv > 75: pts += 0; warnings.append(f"RSI Overbought ({rv:.1f})")
+        elif 40 <= rv < 50: pts += 1
+        else: warnings.append(f"Weak RSI ({rv:.1f})")
 
-    if m1 is not None and m3 is not None:
+    if m20 is not None and m60 is not None:
         found += 1
-        if m1 >= 5 and m3 >= 10:
-            pts += 7; positives.append("Strong momentum")
-        elif m1 >= 3 and m3 >= 5:
-            pts += 5
-        elif m1 >= 0 and m3 >= 0:
-            pts += 3
-        elif m1 < -8 or m3 < -12:
-            warnings.append("Negative momentum")
-        else:
-            pts += 1
+        if m20 >= 5 and m60 >= 10: pts += 7; positives.append(f"Strong momentum")
+        elif m20 >= 3 and m60 >= 5: pts += 5
+        elif m20 >= 0 and m60 >= 0: pts += 3
+        elif m20 < -8 or m60 < -12: warnings.append(f"Negative momentum")
+        else: pts += 1
 
-    if hi52 is not None and lo52 is not None and hi52 > lo52:
+    if high_52 is not None and low_52 is not None and high_52 > low_52:
         found += 1
-        dist_high = ((last - hi52) / hi52) * 100
-        dist_low = ((last - lo52) / lo52) * 100
-        if dist_high >= -5:
-            pts += 1; warnings.append("Trading near 52-Week High.")
-        elif dist_low <= 10:
-            pts += 2; positives.append("Trading near 52-Week Low support.")
-        elif dist_high >= -20:
-            pts += 4
-        else:
-            pts += 5
+        dist_high = ((last_price - high_52) / high_52) * 100
+        dist_low = ((last_price - low_52) / low_52) * 100
+        if dist_high >= -5: pts += 1; warnings.append("Trading near 52-Week High.")
+        elif dist_low <= 10: pts += 2; positives.append("Trading near 52-Week Low support.")
+        elif dist_high >= -20: pts += 4
+        else: pts += 5
 
     return {
-        "score": min(pts, 25), "max": 25, "confidence": found / 4,
+        "score": min(pts, 25), "max": 25, "confidence": found / total_metrics,
         "positives": positives, "warnings": warnings,
-        "data": {
-            "rsi": round(rsi, 2) if rsi is not None else None,
-            "sma50": round(sma50, 2) if sma50 is not None else None,
-            "sma200": round(sma200, 2) if sma200 is not None else None,
-            "return_1m_pct": round(m1, 2) if m1 is not None else None,
-            "return_3m_pct": round(m3, 2) if m3 is not None else None,
-            "52w_high": round(hi52, 2) if hi52 is not None else None,
-            "52w_low": round(lo52, 2) if lo52 is not None else None
-        }
+        "data": {"rsi": round(rv, 2) if rv else None}
     }
-
 
 def analyze_valuation(tv_data):
     positives, warnings, pts, found = [], [], 0, 0
-
-    pe = _first_num(tv_data, "price_earnings_ttm")
-    peg = _first_num(tv_data, "peg_ratio", "price_earnings_growth_ttm")
-    pb = _first_num(tv_data, "price_book_fq", "price_book_ratio")
-    fcf = _first_num(tv_data, "free_cash_flow_margin_ttm", "free_cash_flow_margin")
-
-    # Fallback PEG calculation only if TradingView does not provide PEG directly.
-    if peg is None and pe is not None:
-        growth = _first_num(
-            tv_data,
-            "earnings_growth",
-            "earnings_per_share_diluted_yoy_growth_ttm",
-            "total_revenue_yoy_growth_ttm"
-        )
-        if growth is not None and growth > 0:
-            peg = round(pe / growth, 2)
+    pe = num(tv_data.get("price_earnings_ttm"))
+    eg_pct = num(tv_data.get("earnings_growth")) or num(tv_data.get("total_revenue_yoy_growth"))
+    pb = num(tv_data.get("price_book_fq")) or num(tv_data.get("price_book_ratio"))
+    fcf = num(tv_data.get("free_cash_flow_margin_ttm"))
+    peg = round(pe / eg_pct, 2) if pe and eg_pct and eg_pct > 0 else None
 
     if peg is not None:
         found += 1
-        if peg <= 0.8: pts += 7; positives.append(f"Very attractive PEG ({peg:.2f})")
-        elif peg <= 1.2: pts += 6; positives.append(f"Attractive PEG ({peg:.2f})")
+        if peg <= 0.8: pts += 7; positives.append(f"Very attractive PEG")
+        elif peg <= 1.2: pts += 6; positives.append(f"Attractive PEG")
         elif peg <= 1.8: pts += 4
-        elif peg <= 2.5: pts += 2; warnings.append(f"Elevated PEG ({peg:.2f})")
-        else: warnings.append(f"High PEG ({peg:.2f}) indicates overvaluation")
+        elif peg <= 2.5: pts += 2; warnings.append(f"Elevated PEG")
+        else: warnings.append(f"High PEG indicates overvaluation")
 
-    if pb is not None and pb > 0:
+    if pb is not None:
         found += 1
-        if pb <= 1.5: pts += 6; positives.append(f"Attractive Price-to-Book ({pb:.2f})")
+        if pb <= 1.5: pts += 6; positives.append(f"Attractive Price-to-Book")
         elif pb <= 2.5: pts += 5
         elif pb <= 4.0: pts += 3
-        elif pb <= 6.0: pts += 1; warnings.append(f"Elevated Price-to-Book ({pb:.2f})")
-        else: warnings.append(f"High Price-to-Book ({pb:.2f})")
+        elif pb <= 6.0: pts += 1; warnings.append(f"Elevated Price-to-Book")
+        else: warnings.append(f"High Price-to-Book")
 
     if fcf is not None:
         found += 1
-        if fcf >= 15: pts += 7; positives.append(f"Strong FCF Margin ({fcf:.1f}%)")
+        if fcf >= 15: pts += 7; positives.append(f"Strong FCF Margin")
         elif fcf >= 8: pts += 5
         elif fcf >= 3: pts += 3
         elif fcf >= 0: pts += 1
-        else: warnings.append(f"Negative FCF Margin ({fcf:.1f}%)")
+        else: warnings.append(f"Negative FCF Margin")
 
-    return {
-        "score": min(pts, 20), "max": 20,
-        "confidence": found / 3,
-        "positives": positives, "warnings": warnings,
-        "data": {
-            "peg": round(peg, 2) if peg is not None else None,
-            "price_to_book": round(pb, 2) if pb is not None else None,
-            "fcf_margin_pct": round(fcf, 2) if fcf is not None else None
-        }
-    }
-
+    return {"score": min(pts, 20), "max": 20, "confidence": found / 3, "positives": positives, "warnings": warnings, "data": {"peg": peg, "price_to_book": pb, "fcf_margin_pct": fcf}}
 
 def analyze_risk(tv_data):
     positives, warnings, pts, found = [], [], 0, 0
-    beta = _first_num(tv_data, "beta_1_year")
-    current_ratio = _first_num(tv_data, "current_ratio", "current_ratio_fq")
+    beta = num(tv_data.get("beta_1_year"))
+    cr = num(tv_data.get("current_ratio_fq")) or num(tv_data.get("current_ratio"))
 
     if beta is not None:
         found += 1
-        if 0.5 <= beta <= 1.0:
-            pts += 7; positives.append(f"Moderate Beta ({beta:.2f})")
-        elif beta < 0.5:
-            pts += 5; positives.append(f"Low Beta ({beta:.2f})")
-        elif beta <= 1.3:
-            pts += 4
-        elif beta <= 1.7:
-            pts += 2; warnings.append(f"Elevated Beta ({beta:.2f})")
-        else:
-            warnings.append(f"High Beta ({beta:.2f})")
+        if 0.5 <= beta <= 1.0: pts += 7; positives.append(f"Moderate Market Beta")
+        elif beta < 0.5: pts += 5; positives.append(f"Low Beta")
+        elif beta <= 1.3: pts += 4
+        elif beta <= 1.7: pts += 2; warnings.append(f"Elevated Beta")
+        else: warnings.append(f"High Beta")
 
-    if current_ratio is not None:
+    if cr is not None:
         found += 1
-        if current_ratio >= 2.0:
-            pts += 8; positives.append(f"Strong Current Ratio ({current_ratio:.2f})")
-        elif current_ratio >= 1.5:
-            pts += 6
-        elif current_ratio >= 1.0:
-            pts += 3
-        else:
-            warnings.append(f"Low Current Ratio ({current_ratio:.2f})")
+        if cr >= 2.0: pts += 8; positives.append(f"Strong Current Ratio")
+        elif cr >= 1.5: pts += 6
+        elif cr >= 1.0: pts += 3
+        else: warnings.append(f"Low Current Ratio")
 
-    return {
-        "score": min(pts, 15), "max": 15,
-        "confidence": found / 2,
-        "positives": positives, "warnings": warnings,
-        "data": {
-            "beta_1_year": round(beta, 2) if beta is not None else None,
-            "current_ratio": round(current_ratio, 2) if current_ratio is not None else None
-        }
-    }
-
+    return {"score": min(pts, 15), "max": 15, "confidence": found / 2, "positives": positives, "warnings": warnings, "data": {}}
 
 # =========================================================
 # CORE FUNCTIONS
@@ -1434,64 +1343,67 @@ def api_login(x: LoginRequest):
 
 @app.post("/api/score")
 def api_score(x: StockRequest, request: Request):
-    session_id = request.headers.get("X-StockMeter-Session", "").strip()
-    neo = None
-    if session_id:
-        try:
-            neo = get_session(request)["neo"]
-        except HTTPException:
-            neo = None
-    return analyze_symbol(x.company, neo)
+    """
+    Public-first dashboard analysis.
+
+    IMPORTANT:
+    Do not wait for Kotak Neo while building the dashboard. TradingView scanner
+    data is the fast/public source for score, fundamentals, technicals and chart.
+    Kotak Neo live price is fetched separately by /api/live-price after the page
+    is rendered.
+    """
+    return analyze_symbol(x.company, None)
 
 @app.get("/api/market-overview")
 def api_market_overview(request: Request):
-    """Market snapshot. Uses Kotak Neo when logged in, TradingView scanner otherwise."""
-    session_id = request.headers.get("X-StockMeter-Session", "").strip()
-    if session_id and session_id in sessions:
-        try:
-            neo = sessions[session_id]["neo"]
-            names = [("NIFTY", "Nifty 50", "nse_cm"), ("BANKNIFTY", "Nifty Bank", "nse_cm"), ("SENSEX", "SENSEX", "bse_cm"), ("INDIA VIX", "INDIA VIX", "nse_cm")]
-            items=[]
-            for label, token, seg in names:
-                try:
-                    q=neo.quotes(instrument_tokens=[{"instrument_token":token,"exchange_segment":seg}], quote_type="all")
-                    raw=q
-                    if isinstance(raw,str):
-                        try: raw=json.loads(raw)
-                        except Exception: pass
-                    # Search common nested shapes.
-                    def walk(v):
-                        if isinstance(v,dict):
-                            yield v
-                            for vv in v.values(): yield from walk(vv)
-                        elif isinstance(v,list):
-                            for vv in v: yield from walk(vv)
-                    hit=None
-                    for o in walk(raw):
-                        p=next((num(o.get(k)) for k in ("ltp","lastPrice","pLtp","LTP","last_price") if o.get(k) is not None),None)
-                        if p is not None:
-                            hit=o; break
-                    if hit:
-                        ch=next((num(hit.get(k)) for k in ("changePercent","change_percentage","change_pct","pChange") if hit.get(k) is not None),None)
-                        items.append({"symbol":label,"price":p,"change_pct":ch,"source":"Kotak Neo"})
-                except Exception:
-                    pass
-            if items:
-                return {"items":items,"source":"Kotak Neo","updated_at":datetime.now(timezone.utc).isoformat()}
-        except Exception:
-            pass
+    """
+    Fast public market tape.
 
-    symbols=["NSE:NIFTY","NSE:BANKNIFTY","BSE:SENSEX"]
-    payload={"symbols":{"tickers":symbols},"columns":["close","change","change_abs","volume"]}
+    TradingView scanner is intentionally used first and independently of Kotak
+    login. This keeps Dashboard rendering fast. Kotak Neo remains available for
+    authenticated live-price polling.
+    """
+    symbols = ["NSE:NIFTY", "NSE:BANKNIFTY", "BSE:SENSEX"]
+    payload = {
+        "symbols": {"tickers": symbols},
+        "columns": ["close", "change", "change_abs", "volume"]
+    }
     try:
-        r=requests.post("https://scanner.tradingview.com/india/scan",json=payload,headers={"User-Agent":"Mozilla/5.0","Content-Type":"application/json"},timeout=10)
-        r.raise_for_status(); data=r.json().get("data",[]); out=[]
+        r = requests.post(
+            "https://scanner.tradingview.com/india/scan",
+            json=payload,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Content-Type": "application/json"
+            },
+            timeout=5
+        )
+        r.raise_for_status()
+        data = r.json().get("data", [])
+        out = []
         for row in data:
-            vals=dict(zip(payload["columns"],row.get("d",[])))
-            out.append({"symbol":row.get("s","").split(":")[-1],"price":vals.get("close"),"change_pct":vals.get("change"),"change_abs":vals.get("change_abs"),"volume":vals.get("volume"),"source":"TradingView scanner"})
-        return {"items":out,"source":"TradingView scanner","updated_at":datetime.now(timezone.utc).isoformat()}
+            vals = dict(zip(payload["columns"], row.get("d", [])))
+            out.append({
+                "symbol": row.get("s", "").split(":")[-1],
+                "price": vals.get("close"),
+                "change_pct": vals.get("change"),
+                "change_abs": vals.get("change_abs"),
+                "volume": vals.get("volume"),
+                "source": "TradingView scanner"
+            })
+        if out:
+            return {
+                "items": out,
+                "source": "TradingView scanner",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+        raise RuntimeError("TradingView returned no market rows")
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Market overview failed: {str(e)}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Market overview temporarily unavailable: {str(e)}"
+        )
+
 
 @app.get("/api/market-pulse")
 def api_market_pulse(limit: int = 10):
